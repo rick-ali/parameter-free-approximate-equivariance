@@ -71,9 +71,11 @@ Simlarly, to run the experiments for the baseline CNN, run the same commands wit
 ### SMOKE experiments
 1. Download the smoke plume dataset from https://github.com/Rose-STL-Lab/Approximately-Equivariant-Nets/tree/master
 
-2. Navigate to the directory and install the requirements
+2. Navigate to the directory and install the requirements (conda required)
 ```
 cd SMOKE
+conda create -n "smoke" python=3.9.16
+conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
 pip install -r requirements.txt
 ```
 
