@@ -765,7 +765,6 @@ def train_epoch(
     model.train()
     train_mse = []
     equiv_loss = []
-    print(f"reorient: {reorient}")
     for xx, yy in train_loader:
         B, T, _, H, W = yy.shape
         xx, yy = xx.to(device), yy.to(device)
