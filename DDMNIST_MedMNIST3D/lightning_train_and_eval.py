@@ -112,8 +112,8 @@ def get_args():
     parser.add_argument('--equivariant_layer_id', type=int, nargs="+", default=[9], help='Layer ID of the equivariant layer in the model')
     parser.add_argument('--group', type=str, required=True, help='Group for the model. Can be C4xC4 or D4xD4')
 
-    parser.add_argument('--num_epochs', type=int, default=100) # Default DDMNIST: 50
-    parser.add_argument('--batch_size', type=int, default=128) # Default DDMNIST: 256
+    parser.add_argument('--num_epochs', type=int, default=150) 
+    parser.add_argument('--batch_size', type=int, default=128)
     
     parser.add_argument('--run', type=str, default='model1')
     parser.add_argument('--visible_gpus', type=str, default='0,1,2,3')
