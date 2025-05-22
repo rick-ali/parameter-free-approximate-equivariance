@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import argparse
 from medmnist import INFO
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger
 from datasets.MedMNIST2D_dataset import MedMNISTDataModule
 from datasets.CnMedMNIST2D_dataset import CnMedMNISTDataModule
 from datasets.Z2MedMNIST2D_dataset import Z2MedMNISTDataModule
@@ -21,8 +21,6 @@ from models.D8RegularFunctorModel import D8RegularFunctor
 from models.GxGRegularFunctorModel import GxGRegularFunctor
 from models.MedMNISTGRegularFunctorModel import MedMNISTGxGRegularFunctor
 import torch
-
-import wandb
 
 def get_dataset_from_args(args):
     if args.dataset == 'pairedcn':
