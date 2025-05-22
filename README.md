@@ -13,9 +13,9 @@ pip install -r requirements.txt
 
 2. To run the TMNIST, MNIST and CIFAR10 experiments, run the following commands (respectively)
 ```
-python3 train.py --dataset=TMNIST --latent_dim=42 --run_id=2 --model=RegularizedFunctor --lambda_t=0.05 --lambda_W=1 --x2_transformation=font --W_exponent_algebra=2 
+python3 train.py --dataset=TMNIST --latent_dim=42 --run_id=2 --model=RegularizedFunctor --lambda_t=0.5 --lambda_W=1 --x2_transformation=font --W_exponent_algebra=2 
 
-python3 train.py --data=MNIST --dataset=MultiWMNIST --x2_angle=60 --latent_dim=30 --run_id=-1 --model=MultiWFunctorMNIST
+python3 train.py --data=MNIST --dataset=MultiWMNIST --x2_angle=60 --latent_dim=30 --run_id=-1 --model=MultiWFunctorMNIST --lambda_t=0.5 --lambda_W=0.5
 
 python3 train.py --model=EncoderClassifierFunctor --lambda_t=0.5 --lambda_W=1.0 --latent_dim=64 --run_id=1000 --x2_angle=90 --dataset=ClassificationDataset --data=CIFAR
 ```
