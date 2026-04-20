@@ -1,7 +1,18 @@
-# Parameter-free approximate equivariance for tasks with finite groups
+# Algebraic Priors for Approximately Equivariant Networks
 
+This repository hosts the code for Algebraic Priors for Approximately Equivariant Networks (GrAM@ICLR 2026). If you find this work useful in your research, please cite:
 
-We packaged the code into three self contained directories to reproduce the corresponding experiments in the paper. Each directory contains its own `requirements.txt` file.
+```bibtex
+@inproceedings{ali2026algebraic,
+  title={Algebraic priors for approximately equivariant networks},
+  author={Ali, Riccardo and Lio, Pietro and Vicary, Jamie},
+  booktitle={ICLR 2026 Workshop on Geometry-grounded Representation Learning and Generative Modeling},
+  year={2026},
+  url={[https://openreview.net/forum?id=4ig6Rj4aio](https://openreview.net/forum?id=4ig6Rj4aio)}
+}
+```
+
+We packaged the code into three self-contained directories to reproduce the corresponding experiments in the paper. Each directory contains its own `requirements.txt` file.
 
 
 ### Exploratory experiments to find the optimal representation on the latent space
