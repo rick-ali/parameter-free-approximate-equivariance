@@ -38,22 +38,27 @@ def to_grid(runs):
 def plot(lts, les, acc_mean, acc_std, ent_mean, ent_std, out_path):
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     for ax, mean, std, title, cmap in (
-        (axes[0], acc_mean, acc_std, 'Aug test accuracy', 'viridis'),
-        (axes[1], ent_mean, ent_std, 'Entanglement', 'magma'),
+        (axes[0], acc_mean, acc_std, 'Test Accuracy', 'YlGnBu'),
+        (axes[1], ent_mean, ent_std, 'Entanglement', 'YlOrRd'),
     ):
         im = ax.imshow(mean, origin='lower', aspect='auto', cmap=cmap)
         ax.set_xticks(range(len(les)))
-        ax.set_xticklabels(les, rotation=45, ha='right')
+        ax.set_xticklabels(les, rotation=45, ha='right', fontweight='bold')
         ax.set_yticks(range(len(lts)))
-        ax.set_yticklabels(lts)
-        ax.set_xlabel('lambda_e')
-        ax.set_ylabel('lambda_t')
-        ax.set_title(title)
+        ax.set_yticklabels(lts, fontweight='bold')
+        ax.set_xlabel(r'$\lambda_e$', fontweight='bold')
+        ax.set_ylabel(r'$\lambda_t$', fontweight='bold')
+        ax.set_title(title, fontweight='bold')
+        # pick black/white text per cell based on background brightness
+        norm = plt.Normalize(np.nanmin(mean), np.nanmax(mean))
+        rgba = im.get_cmap()(norm(mean))
+        lum = 0.299 * rgba[..., 0] + 0.587 * rgba[..., 1] + 0.114 * rgba[..., 2]
         for i in range(mean.shape[0]):
             for j in range(mean.shape[1]):
                 if not np.isnan(mean[i, j]):
                     ax.text(j, i, f'{mean[i, j]:.3f}\n±{std[i, j]:.3f}',
-                            ha='center', va='center', color='w', fontsize=8)
+                            ha='center', va='center', fontsize=8, fontweight='bold',
+                            color='black' if lum[i, j] > 0.4 else 'white')
         fig.colorbar(im, ax=ax)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
