@@ -95,11 +95,6 @@ if __name__ == "__main__":
                              '(lambda_t, lambda_e) pairs across all checkpoints.')
     args = parser.parse_args()
 
-    if args.dataset not in TRIPARTITE_DIMS:
-        raise NotImplementedError(
-            f"Tripartite entanglement (used for the ent_avg column) is not configured "
-            f"for dataset {args.dataset}. Supported: {sorted(TRIPARTITE_DIMS)}"
-        )
     tri_dims = TRIPARTITE_DIMS.get(args.dataset, None)
     bi_dims = BIPARTITE_DIMS.get(args.dataset, None)
 
