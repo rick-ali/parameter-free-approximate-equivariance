@@ -1,7 +1,6 @@
 import argparse
 import csv
 import random
-from collections import defaultdict
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -122,8 +121,8 @@ if __name__ == "__main__":
     print(header)
     print("-" * len(header))
 
-    # accumulate aug acc / aug ent per (lambda_t, lambda_e) pair across checkpoints
-    agg = defaultdict(lambda: {'aug_acc': [], 'aug_ent': []})
+    # one row per checkpoint; means/stds are computed downstream by the plotting script
+    rows = []
     for path in args.checkpoint_paths:
         seed_all()
         model = GxGRegularFunctor.load_from_checkpoint(path, map_location=device).to(device)
@@ -146,26 +145,13 @@ if __name__ == "__main__":
             f"{aug_acc:>14.4f} {aug_ent:>14.4f}"
         )
 
-        agg[(lt, le)]['aug_acc'].append(aug_acc)
-        agg[(lt, le)]['aug_ent'].append(aug_ent)
+        rows.append((lt, le, aug_acc, aug_ent))
 
-    # create a CSV file containing aug acc and aug ent aggregated by (lambda_t, lambda_e) pairs for all checkpoints, to be used for plotting:
+    # create a CSV file with one row per checkpoint, to be used for plotting:
     with open(args.csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([
-            'lambda_t', 'lambda_e',
-            'aug_test_acc_mean', 'aug_test_acc_std',
-            'ent_avg_aug_mean', 'ent_avg_aug_std',
-            'n_checkpoints',
-        ])
-        for (lt, le) in sorted(agg.keys()):
-            accs = np.array(agg[(lt, le)]['aug_acc'])
-            ents = np.array(agg[(lt, le)]['aug_ent'])
-            writer.writerow([
-                lt, le,
-                f"{accs.mean():.6f}", f"{accs.std():.6f}",
-                f"{ents.mean():.6f}", f"{ents.std():.6f}",
-                len(accs),
-            ])
-    print(f"\nWrote aggregated CSV to {args.csv_path}")
+        writer.writerow(['lambda_t', 'lambda_e', 'aug_test_acc', 'ent_avg_aug'])
+        for (lt, le, aug_acc, aug_ent) in rows:
+            writer.writerow([lt, le, f"{aug_acc:.6f}", f"{aug_ent:.6f}"])
+    print(f"\nWrote per-run CSV to {args.csv_path}")
 
