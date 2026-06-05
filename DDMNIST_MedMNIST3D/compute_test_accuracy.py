@@ -103,17 +103,21 @@ if __name__ == "__main__":
     # plain and augmented test loaders
     DataModuleClass = DATASET_TO_DATAMODULE[args.dataset]
     seed_all()
-    dm_plain = DataModuleClass(BATCH_SIZE, augment_test=False)
-    dm_plain.setup()
+    # dm_plain = DataModuleClass(BATCH_SIZE, augment_test=False)
+    # dm_plain.setup()
     dm_aug = DataModuleClass(BATCH_SIZE, augment_test=True)
     dm_aug.setup()
-    plain_loader = DataLoader(dm_plain.test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
-    aug_loader = DataLoader(dm_aug.test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+    # plain_loader = DataLoader(dm_plain.test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+    aug_loader = DataLoader(dm_aug.test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
 
+    # header = (
+    #     f"{'lambda_t':>10} {'lambda_e':>10} "
+    #     f"{'test_acc':>10} {'aug_test_acc':>14} "
+    #     f"{'ent_avg_test':>14} {'ent_avg_aug':>14}"
+    # )
     header = (
         f"{'lambda_t':>10} {'lambda_e':>10} "
-        f"{'test_acc':>10} {'aug_test_acc':>14} "
-        f"{'ent_avg_test':>14} {'ent_avg_aug':>14}"
+        f"{'aug_test_acc':>14} {'ent_avg_aug':>14}"
     )
     print(header)
     print("-" * len(header))
@@ -125,17 +129,21 @@ if __name__ == "__main__":
         model = GxGRegularFunctor.load_from_checkpoint(path, map_location=device).to(device)
         model.model.get_latent = True
 
-        seed_all()
-        plain_acc, plain_ent = test_accuracy_and_entanglement(model, plain_loader, device, tri_dims=tri_dims, bi_dims=bi_dims)
+        # seed_all()
+        # plain_acc, plain_ent = test_accuracy_and_entanglement(model, plain_loader, device, tri_dims=tri_dims, bi_dims=bi_dims)
         seed_all()
         aug_acc, aug_ent = test_accuracy_and_entanglement(model, aug_loader, device, tri_dims=tri_dims, bi_dims=bi_dims)
 
         lt = model.hparams['lambda_t']
         le = model.hparams['lambda_e']
+        # print(
+        #     f"{lt:>10} {le:>10} "
+        #     f"{plain_acc:>10.4f} {aug_acc:>14.4f} "
+        #     f"{plain_ent:>14.4f} {aug_ent:>14.4f}"
+        # )
         print(
             f"{lt:>10} {le:>10} "
-            f"{plain_acc:>10.4f} {aug_acc:>14.4f} "
-            f"{plain_ent:>14.4f} {aug_ent:>14.4f}"
+            f"{aug_acc:>14.4f} {aug_ent:>14.4f}"
         )
 
         agg[(lt, le)]['aug_acc'].append(aug_acc)
