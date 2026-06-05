@@ -1,5 +1,7 @@
 import argparse
+import csv
 import random
+from collections import defaultdict
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -88,6 +90,9 @@ if __name__ == "__main__":
                         help='Full paths to one or more trained model checkpoint (.ckpt) files.')
     parser.add_argument('--dataset', type=str, default='ddmnist_d4', choices=DATASET_TO_DATAMODULE.keys(),
                         help='Dataset to use for extracting test accuracy.')
+    parser.add_argument('--csv_path', type=str, default='aug_acc_ent_by_lambda.csv',
+                        help='Output CSV file with aug acc and aug ent aggregated by '
+                             '(lambda_t, lambda_e) pairs across all checkpoints.')
     args = parser.parse_args()
 
     if args.dataset not in TRIPARTITE_DIMS:
@@ -117,6 +122,9 @@ if __name__ == "__main__":
     )
     print(header)
     print("-" * len(header))
+
+    # accumulate aug acc / aug ent per (lambda_t, lambda_e) pair across checkpoints
+    agg = defaultdict(lambda: {'aug_acc': [], 'aug_ent': []})
     for path in args.checkpoint_paths:
         seed_all()
         model = GxGRegularFunctor.load_from_checkpoint(path, map_location=device).to(device)
@@ -134,3 +142,27 @@ if __name__ == "__main__":
             f"{plain_acc:>10.4f} {aug_acc:>14.4f} "
             f"{plain_ent:>14.4f} {aug_ent:>14.4f}"
         )
+
+        agg[(lt, le)]['aug_acc'].append(aug_acc)
+        agg[(lt, le)]['aug_ent'].append(aug_ent)
+
+    # create a CSV file containing aug acc and aug ent aggregated by (lambda_t, lambda_e) pairs for all checkpoints, to be used for plotting:
+    with open(args.csv_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            'lambda_t', 'lambda_e',
+            'aug_test_acc_mean', 'aug_test_acc_std',
+            'ent_avg_aug_mean', 'ent_avg_aug_std',
+            'n_checkpoints',
+        ])
+        for (lt, le) in sorted(agg.keys()):
+            accs = np.array(agg[(lt, le)]['aug_acc'])
+            ents = np.array(agg[(lt, le)]['aug_ent'])
+            writer.writerow([
+                lt, le,
+                f"{accs.mean():.6f}", f"{accs.std():.6f}",
+                f"{ents.mean():.6f}", f"{ents.std():.6f}",
+                len(accs),
+            ])
+    print(f"\nWrote aggregated CSV to {args.csv_path}")
+
