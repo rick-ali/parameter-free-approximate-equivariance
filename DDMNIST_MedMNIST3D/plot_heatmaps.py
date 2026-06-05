@@ -62,7 +62,7 @@ def plot(lts, les, acc_mean, acc_std, ent_mean, ent_std, out_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('csv_path')
+    parser.add_argument('--csv_path')
     parser.add_argument('--out', default='heatmaps.png')
     args = parser.parse_args()
 

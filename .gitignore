@@ -175,3 +175,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+d4_acc_ent_hparam_sweep.csv
