@@ -16,6 +16,7 @@ Run from inside DDMNIST_MedMNIST3D/ so the `models`/`datasets`/`utils` imports r
 """
 import argparse
 import csv
+import os
 import random
 
 import numpy as np
@@ -76,6 +77,10 @@ def main():
 
     pl.seed_everything(args.seed, workers=True)
     device = torch.device(f'cuda:{args.gpu_id}' if torch.cuda.is_available() else 'cpu')
+
+    out_dir = os.path.dirname(args.out_prefix)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     # ---- model ----
     model = GxGRegularFunctor.load_from_checkpoint(args.ckpt, map_location=device)

@@ -30,8 +30,8 @@ def to_grid(runs):
             if (lt, le) in runs:
                 accs = np.array(runs[(lt, le)]['acc'])
                 ents = np.array(runs[(lt, le)]['ent'])
-                acc_mean[i, j], acc_std[i, j] = accs.mean(), accs.std()
-                ent_mean[i, j], ent_std[i, j] = ents.mean(), ents.std()
+                acc_mean[i, j], acc_std[i, j] = accs.mean(), accs.std(ddof=1)
+                ent_mean[i, j], ent_std[i, j] = ents.mean(), ents.std(ddof=1)
     return lts, les, acc_mean, acc_std, ent_mean, ent_std
 
 
