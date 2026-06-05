@@ -7,7 +7,7 @@ from models.GxGRegularFunctorModel import GxGRegularFunctor
 from datasets.C4xC4DDMNIST_dataset import C4xC4DDMNISTDataModule
 from datasets.D4xD4DDMNIST_dataset import D4xD4DDMNISTDataModule
 from datasets.D1xD1DDMNIST_dataset import D1xD1DDMNISTDataModule
-from utils.entanglement import TripartiteEntanglement
+from utils.entanglement import TripartiteEntanglement, Entanglement
 
 DATASET_TO_DATAMODULE = {
     'ddmnist_c4': C4xC4DDMNISTDataModule,
@@ -21,6 +21,9 @@ TRIPARTITE_DIMS = {
     'ddmnist_c4': (4, 4, 4),    # 64 = 4 * 4 * 4
     'ddmnist_d1': (16, 2, 2),   # 64 = 16 * 2 * 2
 }
+BIPARTITE_DIMS = {
+    'ddmnist_d4': (8, 8),       # 64 = 8 * 8
+}
 
 
 def seed_all():
@@ -30,7 +33,7 @@ def seed_all():
 
 
 @torch.no_grad()
-def test_accuracy_and_entanglement(model, dataloader, device, tri_dims):
+def test_accuracy_and_entanglement(model, dataloader, device, tri_dims, bi_dims):
     """Return (accuracy, ent_avg) where ent_avg is the mean across the three
     tripartite cuts (A:BC, B:AC, C:AB), computed per-sample on the full
     concatenated latent set and then averaged across samples. This matches the
@@ -51,25 +54,39 @@ def test_accuracy_and_entanglement(model, dataloader, device, tri_dims):
     acc = correct / total
 
     latents_full = torch.cat(all_latents, dim=0)
-    dim_a, dim_b, dim_c = tri_dims
-    tensor_dims = dim_a * dim_b * dim_c
-    tensor_latents = latents_full[:, :tensor_dims]
-    norm = torch.linalg.vector_norm(tensor_latents, dim=1, keepdim=True)
-    norm_tensor_latents = tensor_latents / norm
-    tri = TripartiteEntanglement(norm_tensor_latents, dim_a, dim_b, dim_c).compute(normalize=True)
-    ent_avg = (
-        tri["entanglement_a_bc"].mean().item()
-        + tri["entanglement_b_ac"].mean().item()
-        + tri["entanglement_c_ab"].mean().item()
-    ) / 3.0
-    return acc, ent_avg
+    # bipartite:
+    if bi_dims is not None:
+        dim_a, dim_b = bi_dims
+        tensor_dims = dim_a * dim_b
+        tensor_latents = latents_full[:, :tensor_dims]
+        norm = torch.linalg.vector_norm(tensor_latents, dim=1, keepdim=True)
+        norm_tensor_latents = tensor_latents / norm
+        ent = Entanglement(norm_tensor_latents, dim_a, dim_b).compute(normalize=True)
+        vne = ent.get("entanglement_a", None)
+        ent_avg = vne.mean().item() if vne is not None else 0.0
+        return acc, ent_avg
+    else:
+        # tripartite:
+        dim_a, dim_b, dim_c = tri_dims
+        tensor_dims = dim_a * dim_b * dim_c
+        tensor_latents = latents_full[:, :tensor_dims]
+        norm = torch.linalg.vector_norm(tensor_latents, dim=1, keepdim=True)
+        norm_tensor_latents = tensor_latents / norm
+        tri = TripartiteEntanglement(norm_tensor_latents, dim_a, dim_b, dim_c).compute(normalize=True)
+        ent_avg = (
+            tri["entanglement_a_bc"].mean().item()
+            + tri["entanglement_b_ac"].mean().item()
+            + tri["entanglement_c_ab"].mean().item()
+        ) / 3.0
+        return acc, ent_avg
+
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_paths', type=str, nargs='+', required=True,
                         help='Full paths to one or more trained model checkpoint (.ckpt) files.')
-    parser.add_argument('--dataset', type=str, default='ddmnist_c4', choices=DATASET_TO_DATAMODULE.keys(),
+    parser.add_argument('--dataset', type=str, default='ddmnist_d4', choices=DATASET_TO_DATAMODULE.keys(),
                         help='Dataset to use for extracting test accuracy.')
     args = parser.parse_args()
 
@@ -78,7 +95,8 @@ if __name__ == "__main__":
             f"Tripartite entanglement (used for the ent_avg column) is not configured "
             f"for dataset {args.dataset}. Supported: {sorted(TRIPARTITE_DIMS)}"
         )
-    tri_dims = TRIPARTITE_DIMS[args.dataset]
+    tri_dims = TRIPARTITE_DIMS.get(args.dataset, None)
+    bi_dims = BIPARTITE_DIMS.get(args.dataset, None)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -105,9 +123,9 @@ if __name__ == "__main__":
         model.model.get_latent = True
 
         seed_all()
-        plain_acc, plain_ent = test_accuracy_and_entanglement(model, plain_loader, device, tri_dims)
+        plain_acc, plain_ent = test_accuracy_and_entanglement(model, plain_loader, device, tri_dims=tri_dims, bi_dims=bi_dims)
         seed_all()
-        aug_acc, aug_ent = test_accuracy_and_entanglement(model, aug_loader, device, tri_dims)
+        aug_acc, aug_ent = test_accuracy_and_entanglement(model, aug_loader, device, tri_dims=tri_dims, bi_dims=bi_dims)
 
         lt = model.hparams['lambda_t']
         le = model.hparams['lambda_e']

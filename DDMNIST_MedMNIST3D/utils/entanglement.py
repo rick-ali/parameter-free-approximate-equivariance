@@ -298,69 +298,79 @@ def get_normalized_average_entanglement(num_samples, dim_a, dim_b):
     return {"normalized_avg_entropy_A": normalized_avg_entropy_A, "normalized_avg_entropy_B": normalized_avg_entropy_B,}
 
 if __name__ == "__main__":
-    # Sanity check, Bell pair example:
-    bell_pair = (1/torch.sqrt(torch.tensor(2.0))) * (torch.kron(torch.tensor([1, 0]), torch.tensor([1, 0])) + torch.kron(torch.tensor([0, 1]), torch.tensor([0, 1])))
-    entanglement = Entanglement(bell_pair, 2, 2)
-    vne_entropy = entanglement.compute()
-    print("Bell pair vector:", bell_pair)
-    print("Von Neumann Entropy (Bell pair):", vne_entropy)
-    print("-"*20)
-    # -----------------------------------------------
+    # # Sanity check, Bell pair example:
+    # bell_pair = (1/torch.sqrt(torch.tensor(2.0))) * (torch.kron(torch.tensor([1, 0]), torch.tensor([1, 0])) + torch.kron(torch.tensor([0, 1]), torch.tensor([0, 1])))
+    # entanglement = Entanglement(bell_pair, 2, 2)
+    # vne_entropy = entanglement.compute()
+    # print("Bell pair vector:", bell_pair)
+    # print("Von Neumann Entropy (Bell pair):", vne_entropy)
+    # print("-"*20)
+    # # -----------------------------------------------
 
-    # Sanity check, also calculated by hand:
-    vector = 1/torch.sqrt(torch.tensor(3.0)) * (torch.kron(torch.tensor([1, 0]), torch.tensor([1, 0])) + torch.kron(torch.tensor([0, 1]), torch.tensor([0, 1])) + torch.kron(torch.tensor([1, 0]), torch.tensor([0, 1])))
-    entanglement = Entanglement(vector, 2, 2)
-    vne_entropy = entanglement.compute()
-    print("Vector:", vector)
-    print("Von Neumann Entropy of systems A and B:", vne_entropy)
+    # # Sanity check, also calculated by hand:
+    # vector = 1/torch.sqrt(torch.tensor(3.0)) * (torch.kron(torch.tensor([1, 0]), torch.tensor([1, 0])) + torch.kron(torch.tensor([0, 1]), torch.tensor([0, 1])) + torch.kron(torch.tensor([1, 0]), torch.tensor([0, 1])))
+    # entanglement = Entanglement(vector, 2, 2)
+    # vne_entropy = entanglement.compute()
+    # print("Vector:", vector)
+    # print("Von Neumann Entropy of systems A and B:", vne_entropy)
 
-    l_m = 1/2 - torch.sqrt(torch.tensor(5.0))/6
-    l_p = 1/2 + torch.sqrt(torch.tensor(5.0))/6
-    s = - (l_m * torch.log2(l_m) + l_p * torch.log2(l_p))
-    print("Expected Von Neumann Entropy:", s)
-    print("-"*20)
-    # -----------------------------------------------
-
-
-    #implement for vectors in the tensor product space: I_8 \otimes rho_reg_g 
-    # let's say that the group representation we fixed was
-    # I_8 \otimes R where R is the matrix [[-1, 0], [0, -1]] (180 degree rotation in 2D)
-    # So, we have an 8-dim space tensored with a 2-dim space, making a 16-dim latent space
-
-    LATENT_DIMS = 16
-    IRREP_DIMS = 2
-
-    #TODO make the vectors come from the complex unit circle instead of a normal distribution — maybe
-    random_unit_vector = torch.randn(LATENT_DIMS) 
-    random_unit_vector /= torch.norm(random_unit_vector)
-    print("Random Unit Vector:", random_unit_vector)
+    # l_m = 1/2 - torch.sqrt(torch.tensor(5.0))/6
+    # l_p = 1/2 + torch.sqrt(torch.tensor(5.0))/6
+    # s = - (l_m * torch.log2(l_m) + l_p * torch.log2(l_p))
+    # print("Expected Von Neumann Entropy:", s)
+    # print("-"*20)
+    # # -----------------------------------------------
 
 
-    entanglement = Entanglement(random_unit_vector, LATENT_DIMS / IRREP_DIMS, IRREP_DIMS)
-    vne_entropy = entanglement.compute()
-    print("\nVon Neumann Entropy of subsystems A and B for random unit vector:", vne_entropy)
+    # #implement for vectors in the tensor product space: I_8 \otimes rho_reg_g 
+    # # let's say that the group representation we fixed was
+    # # I_8 \otimes R where R is the matrix [[-1, 0], [0, -1]] (180 degree rotation in 2D)
+    # # So, we have an 8-dim space tensored with a 2-dim space, making a 16-dim latent space
 
-    # ------------------------------------------------
+    # LATENT_DIMS = 16
+    # IRREP_DIMS = 2
 
-    # Now let's calculate the average entanglement over many random vectors
-    num_samples = 1000
-    average_entanglement = get_average_entanglement(num_samples, LATENT_DIMS / IRREP_DIMS, IRREP_DIMS)
-    avg_entropy_A = average_entanglement.get("avg_entropy_A")
-    avg_entropy_B = average_entanglement.get("avg_entropy_B")
+    # #TODO make the vectors come from the complex unit circle instead of a normal distribution — maybe
+    # random_unit_vector = torch.randn(LATENT_DIMS) 
+    # random_unit_vector /= torch.norm(random_unit_vector)
+    # print("Random Unit Vector:", random_unit_vector)
 
-    print(f"Average Von Neumann Entropy of subsystem A over {num_samples} samples:", avg_entropy_A)
-    print(f"Average Von Neumann Entropy of subsystem B over {num_samples} samples:", avg_entropy_B)
 
-    #TODO we could implement some sort of confidence interval here to tell whether the 
-    # entanglement of the learned latent vectors significantly differs from entanglement in random noise
-    # ------------------------------------------------
+    # entanglement = Entanglement(random_unit_vector, LATENT_DIMS / IRREP_DIMS, IRREP_DIMS)
+    # vne_entropy = entanglement.compute()
+    # print("\nVon Neumann Entropy of subsystems A and B for random unit vector:", vne_entropy)
 
-    #sanity checking a specific vector taken from the latent space of the basic VAE
-    vector = torch.tensor([-0.25589415, -0.03218814,  0.07429797,  0.38550967, -0.21019217, -0.0940889,
-    0.14527982,  0.4434251,   0.50494885,  0.08832321, -0.35899743,  0.01654475,
-    0.18896575,  0.2596877,   0.1034211,   0.05300807])
-    entanglement = Entanglement(vector, LATENT_DIMS / IRREP_DIMS, IRREP_DIMS)
-    vne_entropy = entanglement.compute()
-    vne_entropy_A = vne_entropy.get("entanglement_a")
+    # # ------------------------------------------------
 
-    print("\nVon Neumann Entropy of subsystems A and B for given vector:", vne_entropy_A, type(vne_entropy_A))
+    # # Now let's calculate the average entanglement over many random vectors
+    # num_samples = 1000
+    # average_entanglement = get_average_entanglement(num_samples, LATENT_DIMS / IRREP_DIMS, IRREP_DIMS)
+    # avg_entropy_A = average_entanglement.get("avg_entropy_A")
+    # avg_entropy_B = average_entanglement.get("avg_entropy_B")
+
+    # print(f"Average Von Neumann Entropy of subsystem A over {num_samples} samples:", avg_entropy_A)
+    # print(f"Average Von Neumann Entropy of subsystem B over {num_samples} samples:", avg_entropy_B)
+
+    # #TODO we could implement some sort of confidence interval here to tell whether the 
+    # # entanglement of the learned latent vectors significantly differs from entanglement in random noise
+    # # ------------------------------------------------
+
+    # #sanity checking a specific vector taken from the latent space of the basic VAE
+    # vector = torch.tensor([-0.25589415, -0.03218814,  0.07429797,  0.38550967, -0.21019217, -0.0940889,
+    # 0.14527982,  0.4434251,   0.50494885,  0.08832321, -0.35899743,  0.01654475,
+    # 0.18896575,  0.2596877,   0.1034211,   0.05300807])
+    # entanglement = Entanglement(vector, LATENT_DIMS / IRREP_DIMS, IRREP_DIMS)
+    # vne_entropy = entanglement.compute()
+    # vne_entropy_A = vne_entropy.get("entanglement_a")
+
+    # print("\nVon Neumann Entropy of subsystems A and B for given vector:", vne_entropy_A, type(vne_entropy_A))
+
+    # sanity check for tripartite entanglement, averaged over many random vectors in 2x2x2 space:
+    dim_a, dim_b, dim_c = 16, 2, 2
+    avg_tripartite_entanglement = get_average_tripartite_entanglement(num_samples=1000, dim_a=dim_a, dim_b=dim_b, dim_c=dim_c, normalize=True)
+    print(f"\nAverage tripartite entanglement for in {dim_a}x{dim_b}x{dim_c} space:", avg_tripartite_entanglement)
+
+    # sanity check bipartite 2 x 4 space averaged over many random vectors:
+    dim_a, dim_b = 2, 2
+    avg_bipartite_entanglement = get_average_entanglement(num_samples=1000, dim_a=dim_a, dim_b=dim_b, normalize=True)
+    print(f"\nAverage bipartite entanglement entropies for random unit vectors in {dim_a}x{dim_b} space:", avg_bipartite_entanglement)
