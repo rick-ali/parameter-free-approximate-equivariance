@@ -1,23 +1,31 @@
 """
-Plot the reduced-density PCA produced by orbit_reduced_density_pca.py.
+Plot the reduced-density PCA produced by orbit_reduced_density_pca_multigroup.py.
 
-Reads the .npz file and draws two panels (PC1 vs PC2):
-  left  : rho_A  (digit-1 marginal, the FIXED digit  -> expect a tight cluster)
-  right : rho_B  (digit-2 marginal, the swept digit  -> expect a spread)
-Each sample is drawn as its label text (D4 element for --variation symmetry,
-digit class for --variation digit), coloured black if classified correctly and
-red if not. For symmetry mode the points are connected in element order to show
-the orbit trajectory.
+Reads the .npz file and draws one panel per subsystem (PC1 vs PC2), driven by the
+`subsystem_names` stored in the NPZ:
+  bipartite  (D4xD4)        : rho_digit1 (fixed) | rho_digit2 (swept)
+  tripartite (C4xC4, D1xD1) : rho_outer (I)      | rho_digit1 (fixed) | rho_digit2 (swept)
+Each sample is drawn as its label text (group element for --variation symmetry, digit
+class for --variation digit), coloured black if classified correctly and red if not. For
+symmetry mode the points are connected in element order to show the orbit trajectory.
 
 Runs locally (needs only numpy + matplotlib; no torch/medmnist). Example:
-    python plot_orbit_pca.py --npz results/orbit.npz --out results/orbit_pca.png
+    python plot_orbit_pca_multigroup.py --npz results/orbit.npz --out results/orbit_pca.png
 """
 import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-D4_LABELS = ['e', 'r', 'r2', 'r3', 's', 'rs', 'r2s', 'r3s']  # identity, rotations, flip+rotations
+# Symmetry-element labels for the digit-2 sweep, keyed by group.
+GROUP_SYM_LABELS = {
+    'D4xD4': ['e', 'r', 'r2', 'r3', 's', 'rs', 'r2s', 'r3s'],
+    'C4xC4': ['e', 'r', 'r2', 'r3'],
+    'D1xD1': ['e', 's'],
+}
+
+# Per-subsystem panel role text.
+ROLE = {'outer': 'I, multiplicity', 'digit1': 'digit-1, fixed', 'digit2': 'digit-2'}
 
 
 def marker_panel(ax, coords, codes, point_labels, correct, var, pcs, title, draw_line):
@@ -45,8 +53,10 @@ def sym_range(coord_arrays, px, py):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--npz', type=str, required=True, help='Path to the .npz from orbit_reduced_density_pca.py')
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--npz', type=str, required=True,
+                        help='Path to the .npz from orbit_reduced_density_pca_multigroup.py')
     parser.add_argument('--out', type=str, default=None, help='Output image path (default: <npz>_pca.png)')
     parser.add_argument('--pcs', type=str, default='1,2', help='Which two PCs to plot, 1-indexed (e.g. "1,2").')
     parser.add_argument('--correctness', type=str, default='digit2', choices=['digit2', 'full'],
@@ -57,25 +67,25 @@ def main():
     args = parser.parse_args()
 
     data = np.load(args.npz, allow_pickle=True)
-    # variation mode + per-point codes, with backward-compat for older npz files (symmetry only).
-    variation = str(data['variation']) if 'variation' in data else 'symmetry'
-    codes = data['var_codes'] if 'var_codes' in data else data['d4_codes']
-    cA, cB = data['pca_A_coords'], data['pca_B_coords']
-    vA, vB = data['pca_A_explained_var'], data['pca_B_explained_var']
+    group = str(data['group'])
+    variation = str(data['variation'])
+    names = [str(s) for s in data['subsystem_names']]
+    codes = data['var_codes']
     label = int(data['label'])
     pred_class = data['pred_class'].astype(int)
 
+    coords = {name: data[f'pca_{name}_coords'] for name in names}
+    var = {name: data[f'pca_{name}_explained_var'] for name in names}
+    rho = {name: data[f'rho_{name}'] for name in names}
     # Total variance across the samples (same number the analysis script prints).
-    # Computed from the reduced-density arrays so it works on older npz files too.
-    rho_A, rho_B = data['rho_A'], data['rho_B']
-    tvar_A = float(np.var(rho_A.reshape(rho_A.shape[0], -1), axis=0).sum())
-    tvar_B = float(np.var(rho_B.reshape(rho_B.shape[0], -1), axis=0).sum())
+    tvar = {name: float(np.var(rho[name].reshape(rho[name].shape[0], -1), axis=0).sum())
+            for name in names}
 
     # ---- classification correctness per sample ----
     tens_true = label // 10                      # digit-1 (fixed) true class
     if variation == 'digit':
         unit_true = codes.astype(int)            # the swept digit-2 class
-    else:                                         # symmetry: same digit-2, rotation-invariant true class
+    else:                                         # symmetry: same digit-2, group-invariant true class
         unit_true = np.full(len(codes), label % 10, dtype=int)
     if args.correctness == 'full':
         correct = pred_class == (tens_true * 10 + unit_true)
@@ -84,39 +94,45 @@ def main():
 
     # ---- mode-dependent presentation ----
     if variation == 'symmetry':
-        point_labels = [D4_LABELS[int(c)] for c in codes]
-        swept_title = "digit-2, rotated"
-        sup_what = "digit-2's D4 orbit"
+        sym_labels = GROUP_SYM_LABELS[group]
+        point_labels = [sym_labels[int(c)] for c in codes]
+        swept_word = 'rotated'
+        sup_what = f"digit-2's {group.split('x')[0]} orbit"
         draw_line = True
     else:  # 'digit'
         point_labels = [str(int(c)) for c in codes]
-        swept_title = "digit-2, swept over classes"
+        swept_word = 'swept over classes'
         sup_what = "digit-2's 10 classes"
         draw_line = False
 
     px, py = [int(p) - 1 for p in args.pcs.split(',')]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
-    marker_panel(axes[0], cA, codes, point_labels, correct, vA, (px, py),
-                 f"rho_A  (digit-1, fixed)\ntotal variance = {tvar_A:.3e}", draw_line)
-    marker_panel(axes[1], cB, codes, point_labels, correct, vB, (px, py),
-                 f"rho_B  ({swept_title})\ntotal variance = {tvar_B:.3e}", draw_line)
+    n_panels = len(names)
+    fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5.5))
+    if n_panels == 1:
+        axes = [axes]
+
+    for ax, name in zip(axes, names):
+        role = ROLE[name] if name != 'digit2' else f'digit-2, {swept_word}'
+        title = f"rho_{name}  ({role})\ntotal variance = {tvar[name]:.3e}"
+        marker_panel(ax, coords[name], codes, point_labels, correct, var[name],
+                     (px, py), title, draw_line)
 
     # Set axis limits explicitly (text markers don't drive autoscaling).
     # PCA coords are mean-centered, so use symmetric limits about 0.
     if args.independent_axes:
-        RA, RB = sym_range([cA], px, py), sym_range([cB], px, py)
-        axes[0].set_xlim(-RA, RA); axes[0].set_ylim(-RA, RA)
-        axes[1].set_xlim(-RB, RB); axes[1].set_ylim(-RB, RB)
+        for ax, name in zip(axes, names):
+            R = sym_range([coords[name]], px, py)
+            ax.set_xlim(-R, R); ax.set_ylim(-R, R)
     else:
-        # share the larger panel's scale so the variance asymmetry is visible
-        R = sym_range([cA, cB], px, py)
+        # share the largest panel's scale so the variance asymmetry is visible
+        R = sym_range(list(coords.values()), px, py)
         for ax in axes:
             ax.set_xlim(-R, R); ax.set_ylim(-R, R)
     for ax in axes:
         ax.set_aspect('equal', adjustable='box')
 
-    sup = f"Reduced-density PCA over {sup_what}"
+    sup = f"Reduced-density PCA over {sup_what}   [{group}, {str(data['decomposition'])}]"
     sup += f"   (base label {label}: digit-1={label // 10}, digit-2={label % 10})"
     sup += "    [black=correct, red=misclassified]"
     fig.suptitle(sup)
@@ -124,8 +140,8 @@ def main():
     out = args.out or (args.npz.rsplit('.', 1)[0] + '_pca.png')
     fig.savefig(out, dpi=150, bbox_inches='tight')
     print(f"Wrote {out}")
-    print(f"total variance  rho_A (fixed) = {tvar_A:.3e}")
-    print(f"total variance  rho_B (swept) = {tvar_B:.3e}")
+    for name in names:
+        print(f"total variance  rho_{name} = {tvar[name]:.3e}")
     print(f"correctly classified: {int(correct.sum())}/{len(correct)}")
 
 
