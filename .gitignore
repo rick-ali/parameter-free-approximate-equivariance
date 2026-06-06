@@ -180,3 +180,5 @@ d4_acc_ent_hparam_sweep.csv
 .DS_Store
 heatmaps.png
 results/
+aug_acc_ent_by_lambda.csv
+make_acc_ent_csv.sh
