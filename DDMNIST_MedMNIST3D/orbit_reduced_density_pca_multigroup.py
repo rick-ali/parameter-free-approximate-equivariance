@@ -169,9 +169,13 @@ def main():
                         help="Group / decomposition. If omitted, taken from the checkpoint's "
                              "hparams.group. Must match the training group.")
     parser.add_argument('--variation', type=str, default='symmetry', choices=['symmetry', 'digit'],
-                        help="What to sweep digit-2 over: 'symmetry' = the per-digit group "
+                        help="What to sweep the moved digit over: 'symmetry' = the per-digit group "
                              "transforms of the same digit; 'digit' = one instance of each of the "
-                             "10 digit classes. Digit-1 is fixed in both.")
+                             "10 digit classes. The other digit is fixed in both.")
+    parser.add_argument('--sweep_digit', type=int, default=2, choices=[1, 2],
+                        help="Which digit to vary (the other is held fixed). Default 2 = sweep "
+                             "digit-2 (backward compatible). The latent factor structure is always "
+                             "outer (x) digit1 (x) digit2; only the fixed/swept roles flip.")
     parser.add_argument('--layer_id', type=int, default=12, help='DDMNISTCNN layer to extract latents from.')
     parser.add_argument('--seed', type=int, default=0, help='Seed; selects the random base pair.')
     parser.add_argument('--base_idx', type=int, default=None, help='Override the random base-pair index.')
@@ -211,28 +215,39 @@ def main():
     idx = args.base_idx if args.base_idx is not None else random.randrange(len(base.labels))
     img1, img2, y = base[idx]  # img1, img2: [1,28,28]; img1 = the FIXED digit-1
     label = int(y)
+    sweep_digit = args.sweep_digit
+    fixed_digit = 1 if sweep_digit == 2 else 2
     print(f"Group {group} ({cfg['decomposition']}), base pair index {idx}, label {label} "
           f"(digit-1={label // 10}, digit-2={label % 10})")
-    print(f"Variation mode: {args.variation}")
+    print(f"Variation mode: {args.variation}; sweeping digit-{sweep_digit} (digit-{fixed_digit} fixed)")
 
-    # ---- build the digit-2 samples (digit-1 fixed in both modes) ----
+    # ---- build the swept-digit samples (the other digit is held fixed) ----
+    # The latent factor structure is always outer (x) digit1 (x) digit2; sweep_digit only
+    # decides which digit image we vary, so just the fixed/swept roles flip.
     rng = random.Random(args.seed)
     transform = cfg['transform']
+    swept_base = img2 if sweep_digit == 2 else img1  # the digit image we vary
+
     if args.variation == 'symmetry':
-        # the per-digit group transforms of the SAME digit-2
-        samples = [(transform(img2, h), h) for h in range(cfg['n_sym'])]
+        # the per-digit group transforms of the SAME swept digit
+        samples = [(transform(swept_base, h), h) for h in range(cfg['n_sym'])]
     else:  # 'digit': one instance of each of the 10 digit classes, canonical orientation
-        unit_labels = base.labels % 10
+        class_labels = (base.labels % 10) if sweep_digit == 2 else (base.labels // 10)
         samples = []
         for k in range(10):
-            cand = (unit_labels == k).nonzero(as_tuple=True)[0].tolist()
+            cand = (class_labels == k).nonzero(as_tuple=True)[0].tolist()
             j = rng.choice(cand)
-            _, img2_k, _ = base[j]  # use that sample's digit-2 image
-            samples.append((img2_k, k))
+            pair = base[j]
+            swept_img_k = pair[1] if sweep_digit == 2 else pair[0]  # that sample's swept-digit image
+            samples.append((swept_img_k, k))
 
     var_codes = [code for _, code in samples]
     n = len(var_codes)
-    images = [base._combine_images(img1[0], d2[0]) for d2, _ in samples]  # each [1,56,56], normalized
+    # _combine_images(first=digit1, second=digit2); keep the fixed digit in its slot.
+    if sweep_digit == 2:
+        images = [base._combine_images(img1[0], s[0]) for s, _ in samples]  # each [1,56,56], normalized
+    else:
+        images = [base._combine_images(s[0], img2[0]) for s, _ in samples]
     X = torch.stack(images, dim=0).to(device)  # (n,1,56,56)
 
     # ---- forward: latents + predictions ----
@@ -267,16 +282,22 @@ def main():
 
     swept = 'rotated' if args.variation == 'symmetry' else 'swept over classes'
     np.set_printoptions(precision=4, suppress=True)
-    role = {'outer': 'I, multiplicity', 'digit1': 'digit-1, fixed', 'digit2': f'digit-2, {swept}'}
+    swept_name = f'digit{sweep_digit}'
+    fixed_name = f'digit{fixed_digit}'
+    role = {'outer': 'I, multiplicity',
+            fixed_name: f'digit-{fixed_digit}, fixed',
+            swept_name: f'digit-{sweep_digit}, {swept}'}
     for name in names:
         p = pca[name]
         print(f"rho_{name} ({role[name]})   total variance = {p['tvar']:.3e}")
         print(f"    explained-variance ratio: {np.round(p['var'], 4)}")
         print(f"    absolute variance per PC: {p['absvar']}")
     tv = {name: pca[name]['tvar'] for name in names}
-    print(f"spread ratio  rho_digit2 / rho_digit1 = {tv['digit2'] / max(tv['digit1'], 1e-300):.1f}")
+    print(f"spread ratio  rho_{swept_name} / rho_{fixed_name} = "
+          f"{tv[swept_name] / max(tv[fixed_name], 1e-300):.1f}")
     if 'outer' in names:
-        print(f"spread ratio  rho_digit2 / rho_outer  = {tv['digit2'] / max(tv['outer'], 1e-300):.1f}")
+        print(f"spread ratio  rho_{swept_name} / rho_outer  = "
+              f"{tv[swept_name] / max(tv['outer'], 1e-300):.1f}")
 
     # ---- entropy column for the CSV ----
     # bipartite: the single normalized vN entropy; tripartite: the digit-2 cut (digit2 : rest).
@@ -291,14 +312,14 @@ def main():
         vals = vals[:n_pcs] + [float('nan')] * max(0, n_pcs - len(vals))
         return vals
 
-    header = ['subsystem', 'group', 'var_kind', 'var_code', 'pred_class', 'pred_tens',
-              'pred_unit', 'entropy'] + [f'pc{j + 1}' for j in range(n_pcs)]
+    header = ['subsystem', 'group', 'var_kind', 'swept_digit', 'var_code', 'pred_class',
+              'pred_tens', 'pred_unit', 'entropy'] + [f'pc{j + 1}' for j in range(n_pcs)]
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(header)
         for name in names:
             for i, code in enumerate(var_codes):
-                writer.writerow([name, group, args.variation, int(code), int(pred[i]),
+                writer.writerow([name, group, args.variation, sweep_digit, int(code), int(pred[i]),
                                  int(pred_tens[i]), int(pred_unit[i]), float(csv_entropy[i])]
                                 + pc_row(pca[name]['coords'], i))
     print(f"Wrote {csv_path}")
@@ -313,6 +334,7 @@ def main():
         base_idx=idx,
         label=label,
         variation=args.variation,
+        sweep_digit=sweep_digit,
         var_codes=np.array(var_codes),
         images=X.cpu().numpy(),
         latents=Z.numpy(),

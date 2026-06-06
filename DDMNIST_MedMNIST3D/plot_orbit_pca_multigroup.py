@@ -17,15 +17,12 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Symmetry-element labels for the digit-2 sweep, keyed by group.
+# Symmetry-element labels for the swept-digit sweep, keyed by group.
 GROUP_SYM_LABELS = {
     'D4xD4': ['e', 'r', 'r2', 'r3', 's', 'rs', 'r2s', 'r3s'],
     'C4xC4': ['e', 'r', 'r2', 'r3'],
     'D1xD1': ['e', 's'],
 }
-
-# Per-subsystem panel role text.
-ROLE = {'outer': 'I, multiplicity', 'digit1': 'digit-1, fixed', 'digit2': 'digit-2'}
 
 
 def marker_panel(ax, coords, codes, point_labels, correct, var, pcs, title, draw_line):
@@ -59,8 +56,8 @@ def main():
                         help='Path to the .npz from orbit_reduced_density_pca_multigroup.py')
     parser.add_argument('--out', type=str, default=None, help='Output image path (default: <npz>_pca.png)')
     parser.add_argument('--pcs', type=str, default='1,2', help='Which two PCs to plot, 1-indexed (e.g. "1,2").')
-    parser.add_argument('--correctness', type=str, default='digit2', choices=['digit2', 'full'],
-                        help="What makes a marker black: 'digit2' = the swept digit-2's predicted class "
+    parser.add_argument('--correctness', type=str, default='swept', choices=['swept', 'full'],
+                        help="What makes a marker black: 'swept' = the swept digit's predicted class "
                              "matches its true class; 'full' = the whole 2-digit prediction is correct.")
     parser.add_argument('--independent-axes', action='store_true',
                         help='Let each panel autoscale separately (default: share the larger panel scale).')
@@ -69,6 +66,7 @@ def main():
     data = np.load(args.npz, allow_pickle=True)
     group = str(data['group'])
     variation = str(data['variation'])
+    sweep_digit = int(data['sweep_digit']) if 'sweep_digit' in data.files else 2
     names = [str(s) for s in data['subsystem_names']]
     codes = data['var_codes']
     label = int(data['label'])
@@ -82,28 +80,43 @@ def main():
             for name in names}
 
     # ---- classification correctness per sample ----
-    tens_true = label // 10                      # digit-1 (fixed) true class
+    # tens place = digit-1, unit place = digit-2. The swept digit's class varies with
+    # `codes` in 'digit' mode; everything else comes from the fixed base label.
     if variation == 'digit':
-        unit_true = codes.astype(int)            # the swept digit-2 class
-    else:                                         # symmetry: same digit-2, group-invariant true class
+        if sweep_digit == 2:
+            unit_true = codes.astype(int)
+            tens_true = np.full(len(codes), label // 10, dtype=int)
+        else:
+            tens_true = codes.astype(int)
+            unit_true = np.full(len(codes), label % 10, dtype=int)
+    else:                                         # symmetry: classes are group-invariant
+        tens_true = np.full(len(codes), label // 10, dtype=int)
         unit_true = np.full(len(codes), label % 10, dtype=int)
     if args.correctness == 'full':
         correct = pred_class == (tens_true * 10 + unit_true)
-    else:                                         # 'digit2'
+    elif sweep_digit == 2:                        # 'swept' = the swept digit's class
         correct = (pred_class % 10) == unit_true
+    else:
+        correct = (pred_class // 10) == tens_true
 
     # ---- mode-dependent presentation ----
     if variation == 'symmetry':
         sym_labels = GROUP_SYM_LABELS[group]
         point_labels = [sym_labels[int(c)] for c in codes]
         swept_word = 'rotated'
-        sup_what = f"digit-2's {group.split('x')[0]} orbit"
+        sup_what = f"digit-{sweep_digit}'s {group.split('x')[0]} orbit"
         draw_line = True
     else:  # 'digit'
         point_labels = [str(int(c)) for c in codes]
         swept_word = 'swept over classes'
-        sup_what = "digit-2's 10 classes"
+        sup_what = f"digit-{sweep_digit}'s 10 classes"
         draw_line = False
+
+    def role_for(name):
+        if name == 'outer':
+            return 'I, multiplicity'
+        digit_num = 1 if name == 'digit1' else 2
+        return f'digit-{digit_num}, ' + (swept_word if digit_num == sweep_digit else 'fixed')
 
     px, py = [int(p) - 1 for p in args.pcs.split(',')]
 
@@ -113,8 +126,7 @@ def main():
         axes = [axes]
 
     for ax, name in zip(axes, names):
-        role = ROLE[name] if name != 'digit2' else f'digit-2, {swept_word}'
-        title = f"rho_{name}  ({role})\ntotal variance = {tvar[name]:.3e}"
+        title = f"rho_{name}  ({role_for(name)})\ntotal variance = {tvar[name]:.3e}"
         marker_panel(ax, coords[name], codes, point_labels, correct, var[name],
                      (px, py), title, draw_line)
 
