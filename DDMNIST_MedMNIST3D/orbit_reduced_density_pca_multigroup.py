@@ -232,7 +232,7 @@ def main():
 
     var_codes = [code for _, code in samples]
     n = len(var_codes)
-    images = [base._combine_images(d2[0], img1[0]) for d2, _ in samples]  # each [1,56,56], normalized
+    images = [base._combine_images(img1[0], d2[0]) for d2, _ in samples]  # each [1,56,56], normalized
     X = torch.stack(images, dim=0).to(device)  # (n,1,56,56)
 
     # ---- forward: latents + predictions ----
