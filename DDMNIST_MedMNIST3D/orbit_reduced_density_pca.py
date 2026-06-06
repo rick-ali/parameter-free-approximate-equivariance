@@ -1,12 +1,14 @@
 """
-Reduced-density PCA over a single digit's D4 orbit (DDMNIST, D4xD4).
+Reduced-density PCA over a single digit's variation (DDMNIST, D4xD4).
 
-Pick one random base digit pair, fix digit-1, sweep digit-2 over all 8 D4 group
-elements, encode each image with a trained GxGRegularFunctor checkpoint, and form
-the two reduced density matrices of the leading 8x8 latent factor:
+Pick one random base digit pair, fix digit-1, and sweep digit-2 according to --variation:
+    symmetry : the 8 D4 group transforms of the same digit-2 (rotation orbit)
+    digit    : one instance of each of the 10 digit classes as digit-2 (canonical orientation)
+Encode each image with a trained GxGRegularFunctor checkpoint, and form the two reduced
+density matrices of the leading 8x8 latent factor:
     rho_A = digit-1 marginal   (expected ~invariant: digit-1 is held fixed)
-    rho_B = digit-2 marginal   (expected to trace the rotation orbit)
-Then run PCA across the 8 samples, separately for the rho_A set and the rho_B set.
+    rho_B = digit-2 marginal   (expected to vary across the swept digit-2)
+Then run PCA across the n samples, separately for the rho_A set and the rho_B set.
 
 Single checkpoint. Writes a CSV (PCA coords + predictions + entropy per element)
 and an NPZ (full arrays). No plotting.
@@ -66,6 +68,10 @@ def main():
     parser.add_argument('--out_prefix', type=str, required=True,
                         help='Output path prefix; writes <prefix>.csv and <prefix>.npz')
     parser.add_argument('--group', type=str, default='D4xD4')
+    parser.add_argument('--variation', type=str, default='symmetry', choices=['symmetry', 'digit'],
+                        help="What to sweep digit-2 over: 'symmetry' = the 8 D4 transforms of the "
+                             "same digit; 'digit' = one instance of each of the 10 digit classes. "
+                             "Digit-1 is fixed in both.")
     parser.add_argument('--layer_id', type=int, default=12, help='DDMNISTCNN layer to extract latents from.')
     parser.add_argument('--dim_a', type=int, default=8, help='Digit-1 factor dimension.')
     parser.add_argument('--dim_b', type=int, default=8, help='Digit-2 factor dimension.')
@@ -94,18 +100,30 @@ def main():
     base = dm.test_dataset.data  # DDMNIST: raw [1,28,28] digits + label
 
     idx = args.base_idx if args.base_idx is not None else random.randrange(len(base.labels))
-    img1, img2, y = base[idx]  # img1, img2: [1,28,28]
+    img1, img2, y = base[idx]  # img1, img2: [1,28,28]; img1 = the FIXED digit-1
     label = int(y)
     print(f"Base pair index {idx}, label {label} (digit-1={label // 10}, digit-2={label % 10})")
+    print(f"Variation mode: {args.variation}")
 
-    # ---- 8 images: digit-1 fixed, digit-2 swept over D4 ----
-    d4_codes = list(range(8))
-    images = []
-    for h in d4_codes:
-        t2 = transform_d4_clean(img2, h)
-        combined = base._combine_images(img1[0], t2[0])  # [1,56,56], normalized
-        images.append(combined)
-    X = torch.stack(images, dim=0).to(device)  # (8,1,56,56)
+    # ---- build the digit-2 samples (digit-1 fixed in both modes) ----
+    # `samples` is a list of (digit2_image [1,28,28], code) pairs.
+    rng = random.Random(args.seed)
+    if args.variation == 'symmetry':
+        # the 8 D4 transforms of the SAME digit-2
+        samples = [(transform_d4_clean(img2, h), h) for h in range(8)]
+    else:  # 'digit': one instance of each of the 10 digit classes, canonical orientation
+        unit_labels = base.labels % 10
+        samples = []
+        for k in range(10):
+            cand = (unit_labels == k).nonzero(as_tuple=True)[0].tolist()
+            j = rng.choice(cand)
+            _, img2_k, _ = base[j]  # use that sample's digit-2 image
+            samples.append((img2_k, k))
+
+    var_codes = [code for _, code in samples]
+    n = len(var_codes)
+    images = [base._combine_images(img1[0], d2[0]) for d2, _ in samples]  # each [1,56,56], normalized
+    X = torch.stack(images, dim=0).to(device)  # (n,1,56,56)
 
     # ---- forward: latents + predictions ----
     with torch.no_grad():
@@ -125,26 +143,39 @@ def main():
     states = states / states.norm(dim=1, keepdim=True).clamp_min(1e-12)  # unit vectors
 
     ent = Entanglement(states, dim_a, dim_b)
-    rho = ent.rho                                      # (8, d, d)
+    rho = ent.rho                                      # (n, d, d)
     # NOTE: by einsum+shape (not the misleading names), partial_trace_A -> rho_A, partial_trace_B -> rho_B.
-    rho_A = ent.partial_trace_A(rho, dim_a, dim_b)     # (8, dim_a, dim_a) digit-1 marginal
-    rho_B = ent.partial_trace_B(rho, dim_a, dim_b)     # (8, dim_b, dim_b) digit-2 marginal
-    entropy = ent.compute(normalize=True)["entanglement_a"]  # (8,) normalized von Neumann entropy
+    rho_A = ent.partial_trace_A(rho, dim_a, dim_b)     # (n, dim_a, dim_a) digit-1 marginal
+    rho_B = ent.partial_trace_B(rho, dim_a, dim_b)     # (n, dim_b, dim_b) digit-2 marginal
+    entropy = ent.compute(normalize=True)["entanglement_a"]  # (n,) normalized von Neumann entropy
 
     rho_A = rho_A.numpy()
     rho_B = rho_B.numpy()
     entropy = entropy.numpy()
 
-    # ---- PCA across the 8 samples, separately per subsystem ----
-    M_A = rho_A.reshape(len(d4_codes), -1)  # (8, dim_a*dim_a)
-    M_B = rho_B.reshape(len(d4_codes), -1)  # (8, dim_b*dim_b)
+    # ---- PCA across the n samples, separately per subsystem ----
+    M_A = rho_A.reshape(n, -1)  # (n, dim_a*dim_a)
+    M_B = rho_B.reshape(n, -1)  # (n, dim_b*dim_b)
     pca_A_coords, pca_A_var, pca_A_comp = pca_across_samples(M_A)
     pca_B_coords, pca_B_var, pca_B_comp = pca_across_samples(M_B)
 
-    print(f"rho_A (digit-1, fixed)   PCA explained variance: {np.round(pca_A_var, 4)}  "
-          f"total spread (sum S^2) = {np.var(M_A, axis=0).sum():.3e}")
-    print(f"rho_B (digit-2, rotated) PCA explained variance: {np.round(pca_B_var, 4)}  "
-          f"total spread (sum S^2) = {np.var(M_B, axis=0).sum():.3e}")
+    # Total variance across the samples (absolute scale), and per-PC absolute variance =
+    # explained-ratio * total. The ratios are scale-free, so the absolute numbers are what
+    # let you compare rho_A vs rho_B and across checkpoints.
+    tvar_A = float(np.var(M_A, axis=0).sum())
+    tvar_B = float(np.var(M_B, axis=0).sum())
+    absvar_A = pca_A_var * tvar_A
+    absvar_B = pca_B_var * tvar_B
+
+    swept = 'rotated' if args.variation == 'symmetry' else 'swept over classes'
+    np.set_printoptions(precision=4, suppress=True)
+    print(f"rho_A (digit-1, fixed)   total variance = {tvar_A:.3e}")
+    print(f"    explained-variance ratio: {np.round(pca_A_var, 4)}")
+    print(f"    absolute variance per PC: {absvar_A}")
+    print(f"rho_B (digit-2, {swept}) total variance = {tvar_B:.3e}")
+    print(f"    explained-variance ratio: {np.round(pca_B_var, 4)}")
+    print(f"    absolute variance per PC: {absvar_B}")
+    print(f"spread ratio  rho_B / rho_A = {tvar_B / max(tvar_A, 1e-300):.1f}")
 
     # ---- CSV ----
     n_pcs = args.n_pcs_csv
@@ -156,17 +187,17 @@ def main():
         vals = vals[:n_pcs] + [float('nan')] * max(0, n_pcs - len(vals))
         return vals
 
-    header = ['subsystem', 'd4_element', 'pred_class', 'pred_tens', 'pred_unit', 'entropy'] \
+    header = ['subsystem', 'var_kind', 'var_code', 'pred_class', 'pred_tens', 'pred_unit', 'entropy'] \
         + [f'pc{j + 1}' for j in range(n_pcs)]
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(header)
-        for i, h in enumerate(d4_codes):
-            writer.writerow(['A_digit1', h, int(pred[i]), int(pred_tens[i]), int(pred_unit[i]),
-                             float(entropy[i])] + pc_row(pca_A_coords, i))
-        for i, h in enumerate(d4_codes):
-            writer.writerow(['B_digit2', h, int(pred[i]), int(pred_tens[i]), int(pred_unit[i]),
-                             float(entropy[i])] + pc_row(pca_B_coords, i))
+        for i, code in enumerate(var_codes):
+            writer.writerow(['A_digit1', args.variation, int(code), int(pred[i]), int(pred_tens[i]),
+                             int(pred_unit[i]), float(entropy[i])] + pc_row(pca_A_coords, i))
+        for i, code in enumerate(var_codes):
+            writer.writerow(['B_digit2', args.variation, int(code), int(pred[i]), int(pred_tens[i]),
+                             int(pred_unit[i]), float(entropy[i])] + pc_row(pca_B_coords, i))
     print(f"Wrote {csv_path}")
 
     # ---- NPZ ----
@@ -175,7 +206,8 @@ def main():
         npz_path,
         base_idx=idx,
         label=label,
-        d4_codes=np.array(d4_codes),
+        variation=args.variation,
+        var_codes=np.array(var_codes),
         images=X.cpu().numpy(),
         latents=Z.numpy(),
         states=states.numpy(),
@@ -189,6 +221,10 @@ def main():
         pca_B_coords=pca_B_coords,
         pca_A_explained_var=pca_A_var,
         pca_B_explained_var=pca_B_var,
+        pca_A_absolute_var=absvar_A,
+        pca_B_absolute_var=absvar_B,
+        pca_A_total_var=tvar_A,
+        pca_B_total_var=tvar_B,
         pca_A_components=pca_A_comp,
         pca_B_components=pca_B_comp,
     )

@@ -179,3 +179,4 @@ cython_debug/
 d4_acc_ent_hparam_sweep.csv
 .DS_Store
 heatmaps.png
+results/
