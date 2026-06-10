@@ -159,6 +159,69 @@ def tripartite_marginals(states: torch.Tensor, dim_a: int, dim_b: int, dim_c: in
     return rhos, entropy
 
 
+def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
+                             decimals=3, eig_spectrum=False):
+    """Print the dominant learned vector of each subsystem and its alignment with all-ones.
+
+    The all-ones direction is the unique G-invariant (trivial-irrep) direction of a regular
+    representation: every permutation matrix fixes it, so a subsystem that collapses onto it
+    satisfies its equivariance constraint for free. For each subsystem reduced density matrix
+    rho (n, d, d) we take the top eigenvector as the subsystem's dominant pure direction
+    (magnitude irrelevant: it is unit norm). We report, across the sweep:
+        topeig : the top eigenvalue (purity; ~1 => the marginal is ~pure / product-like)
+        align  : |<top_vec, 1/sqrt(d)>| in [0, 1]  (1 => collapsed to the all-ones direction)
+    plus a per-subsystem summary (mean alignment, and a consensus 'drift' = how much the
+    direction moves across the sweep).
+    """
+    np.set_printoptions(precision=decimals, suppress=True)
+    dim_by_name = dict(zip(names, dims))
+    # row labels: symmetry -> group-element names; digit -> the swept digit class
+    if variation == 'symmetry':
+        row_labels = [cfg['sym_labels'][int(c)] for c in var_codes]
+    else:
+        row_labels = [str(int(c)) for c in var_codes]
+    lbl_w = max(4, *(len(s) for s in row_labels))
+
+    print("\n=== Subsystem learned vectors (alignment with the all-ones / trivial-irrep direction) ===")
+    print("align = |<top eigvec, 1/sqrt(d)>| in [0,1];  align~1 AND topeig~1 => collapsed to all-ones "
+          "(trivial equivariance)")
+
+    out = {}  # name -> dict(topvec, topeig, align) for optional NPZ stashing
+    for name in names:
+        d = int(dim_by_name[name])
+        ones = np.ones(d) / np.sqrt(d)
+        rho = rhos[name]                       # (n, d, d), real symmetric (PSD)
+        evals, evecs = np.linalg.eigh(rho)     # ascending; evecs[:, :, k] is k-th eigvec
+        top_eval = evals[:, -1]                # (n,)
+        top_vec = evecs[:, :, -1]              # (n, d), unit norm
+        # canonical sign: make the largest-|component| positive so rows are comparable
+        lead = np.argmax(np.abs(top_vec), axis=1)
+        sign = np.sign(top_vec[np.arange(top_vec.shape[0]), lead])
+        sign[sign == 0] = 1.0
+        top_vec = top_vec * sign[:, None]
+        align = np.abs(top_vec @ ones)         # (n,) in [0, 1]
+
+        print(f"\n[{name}]  ({role[name]})   d={d}   ones-ref = 1/sqrt({d}) = {1.0/np.sqrt(d):.4f}")
+        print(f"  {'code':<{lbl_w}}  topeig   align   top-eigenvector (unit direction, canonical sign)")
+        for i, rl in enumerate(row_labels):
+            print(f"  {rl:<{lbl_w}}  {top_eval[i]:.4f}  {align[i]:.4f}  {top_vec[i]}")
+            if eig_spectrum:
+                print(f"  {'':<{lbl_w}}  eigenvalues: {evals[i][::-1]}")
+
+        # consensus direction across the sweep (top singular vector of the stacked unit vectors),
+        # drift = 1 - mean |cos(v_i, consensus)|: ~0 for a fixed subsystem, larger when it transforms
+        _, _, Vt = np.linalg.svd(top_vec, full_matrices=False)
+        consensus = Vt[0]
+        drift = 1.0 - float(np.mean(np.abs(top_vec @ consensus)))
+        verdict = ("COLLAPSED to all-ones (trivial equivariance)"
+                   if align.mean() > 0.9 else "varying / not collapsed")
+        print(f"  summary: mean align = {align.mean():.4f} | mean topeig = {top_eval.mean():.4f} "
+              f"| drift = {drift:.4f}  ->  {verdict}")
+        out[name] = dict(topvec=top_vec, topeig=top_eval, align=align)
+
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -190,6 +253,14 @@ def main():
                              "the random / --base_idx pair. Note: if you sweep digit-2 with "
                              "--variation digit, its base class is overwritten by the class sweep.")
     parser.add_argument('--n_pcs_csv', type=int, default=3, help='Number of PCs to write to the CSV.')
+    parser.add_argument('--print_vectors', action='store_true',
+                        help="Print each subsystem's dominant learned vector and its alignment with "
+                             "the all-ones (trivial-irrep) direction across the sweep.")
+    parser.add_argument('--eig_spectrum', action='store_true',
+                        help="With --print_vectors, also print the full eigenvalue spectrum of each "
+                             "subsystem's reduced density matrix per swept sample.")
+    parser.add_argument('--vec_decimals', type=int, default=3,
+                        help='Decimal places for printed eigenvectors (with --print_vectors).')
     parser.add_argument('--gpu_id', type=int, default=0)
     args = parser.parse_args()
 
@@ -332,6 +403,13 @@ def main():
         print(f"spread ratio  rho_{swept_name} / rho_outer  = "
               f"{tv[swept_name] / max(tv['outer'], 1e-300):.1f}")
 
+    # ---- optional: dominant subsystem vectors + all-ones alignment ----
+    subsystem_vectors = None
+    if args.print_vectors:
+        subsystem_vectors = report_subsystem_vectors(
+            rhos, names, dims, var_codes, cfg, args.variation, role,
+            decimals=args.vec_decimals, eig_spectrum=args.eig_spectrum)
+
     # ---- entropy column for the CSV ----
     # bipartite: the single normalized vN entropy; tripartite: the digit-2 cut (digit2 : rest).
     csv_entropy = entropy['entropy'] if cfg['decomposition'] == 'bipartite' else entropy['entropy_c_ab']
@@ -386,6 +464,11 @@ def main():
         payload[f'pca_{name}_absolute_var'] = p['absvar']
         payload[f'pca_{name}_total_var'] = p['tvar']
         payload[f'pca_{name}_components'] = p['comp']
+    if subsystem_vectors is not None:
+        for name, v in subsystem_vectors.items():
+            payload[f'topvec_{name}'] = v['topvec']   # (n, d_name) dominant unit direction
+            payload[f'topeig_{name}'] = v['topeig']   # (n,) top eigenvalue (purity)
+            payload[f'align_{name}'] = v['align']     # (n,) |<topvec, all-ones>|
     np.savez(npz_path, **payload)
     print(f"Wrote {npz_path}")
 
