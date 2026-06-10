@@ -249,7 +249,7 @@ def main():
         out_prefix = args.out_prefix
     else:
         lt, le = model.hparams.get('lambda_t'), model.hparams.get('lambda_e')
-        out_prefix = os.path.join('results', group, f"T{lt}_E{le}_{label // 10}{label % 10}")
+        out_prefix = os.path.join('results', group, f"T{lt}_E{le}_{'v' if args.sweep_digit == 1 else ''}{label // 10}{'v' if args.sweep_digit == 2 else ''}{label % 10}")
     out_dir = os.path.dirname(out_prefix)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
