@@ -415,8 +415,8 @@ def main():
     print(f"\naverage entanglement over the {n} plotted encodings (normalized vN entropy, [0,1]):")
     for key, vals in entropy.items():
         vals = np.asarray(vals)
-        label = entropy_cut_label.get(key, key)
-        print(f"    {label:<24} mean = {vals.mean():.4f}  (std {vals.std():.4f}, "
+        cut_label = entropy_cut_label.get(key, key)
+        print(f"    {cut_label:<24} mean = {vals.mean():.4f}  (std {vals.std():.4f}, "
               f"min {vals.min():.4f}, max {vals.max():.4f})")
 
     # ---- optional: dominant subsystem vectors + all-ones alignment ----
