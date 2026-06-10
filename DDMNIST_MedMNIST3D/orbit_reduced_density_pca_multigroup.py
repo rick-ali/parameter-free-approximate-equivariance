@@ -163,8 +163,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--ckpt', type=str, required=True, help='Path to the checkpoint (.ckpt).')
-    parser.add_argument('--out_prefix', type=str, required=True,
-                        help='Output path prefix; writes <prefix>.csv and <prefix>.npz')
+    parser.add_argument('--out_prefix', type=str, default=None,
+                        help='Output path prefix; writes <prefix>.csv and <prefix>.npz. '
+                             'If omitted, defaults to '
+                             'results/<group>/T<lambda_t>_E<lambda_e>_<digit1><digit2>')
     parser.add_argument('--group', type=str, default=None, choices=list(GROUP_CONFIG.keys()),
                         help="Group / decomposition. If omitted, taken from the checkpoint's "
                              "hparams.group. Must match the training group.")
@@ -179,16 +181,20 @@ def main():
     parser.add_argument('--layer_id', type=int, default=12, help='DDMNISTCNN layer to extract latents from.')
     parser.add_argument('--seed', type=int, default=0, help='Seed; selects the random base pair.')
     parser.add_argument('--base_idx', type=int, default=None, help='Override the random base-pair index.')
+    parser.add_argument('--digit1', type=int, default=None, choices=range(10), metavar='[0-9]',
+                        help="Desired digit-1 class (0-9) for the base pair. If omitted, taken from "
+                             "the random / --base_idx pair. Note: if you sweep digit-1 with "
+                             "--variation digit, its base class is overwritten by the class sweep.")
+    parser.add_argument('--digit2', type=int, default=None, choices=range(10), metavar='[0-9]',
+                        help="Desired digit-2 class (0-9) for the base pair. If omitted, taken from "
+                             "the random / --base_idx pair. Note: if you sweep digit-2 with "
+                             "--variation digit, its base class is overwritten by the class sweep.")
     parser.add_argument('--n_pcs_csv', type=int, default=3, help='Number of PCs to write to the CSV.')
     parser.add_argument('--gpu_id', type=int, default=0)
     args = parser.parse_args()
 
     pl.seed_everything(args.seed, workers=True)
     device = torch.device(f'cuda:{args.gpu_id}' if torch.cuda.is_available() else 'cpu')
-
-    out_dir = os.path.dirname(args.out_prefix)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
 
     # ---- model ----
     model = GxGRegularFunctor.load_from_checkpoint(args.ckpt, map_location=device)
@@ -212,7 +218,24 @@ def main():
     dm.setup(stage='test')
     base = dm.test_dataset.data  # DDMNIST: raw [1,28,28] digits + label
 
-    idx = args.base_idx if args.base_idx is not None else random.randrange(len(base.labels))
+    if args.base_idx is not None:
+        if args.digit1 is not None or args.digit2 is not None:
+            print("Note: --base_idx given; ignoring --digit1/--digit2.")
+        idx = args.base_idx
+    elif args.digit1 is not None or args.digit2 is not None:
+        # pick a random base pair whose digit-1 / digit-2 classes match the request
+        tens, units = base.labels // 10, base.labels % 10
+        mask = torch.ones(len(base.labels), dtype=torch.bool)
+        if args.digit1 is not None:
+            mask &= (tens == args.digit1)
+        if args.digit2 is not None:
+            mask &= (units == args.digit2)
+        cand = mask.nonzero(as_tuple=True)[0].tolist()
+        if not cand:
+            raise ValueError(f"No base pair with digit-1={args.digit1}, digit-2={args.digit2}.")
+        idx = random.choice(cand)
+    else:
+        idx = random.randrange(len(base.labels))
     img1, img2, y = base[idx]  # img1, img2: [1,28,28]; img1 = the FIXED digit-1
     label = int(y)
     sweep_digit = args.sweep_digit
@@ -220,6 +243,16 @@ def main():
     print(f"Group {group} ({cfg['decomposition']}), base pair index {idx}, label {label} "
           f"(digit-1={label // 10}, digit-2={label % 10})")
     print(f"Variation mode: {args.variation}; sweeping digit-{sweep_digit} (digit-{fixed_digit} fixed)")
+
+    # ---- resolve the output prefix (default: results/<group>/T<lambda_t>_E<lambda_e>_<d1><d2>) ----
+    if args.out_prefix is not None:
+        out_prefix = args.out_prefix
+    else:
+        lt, le = model.hparams.get('lambda_t'), model.hparams.get('lambda_e')
+        out_prefix = os.path.join('results', group, f"T{lt}_E{le}_{label // 10}{label % 10}")
+    out_dir = os.path.dirname(out_prefix)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     # ---- build the swept-digit samples (the other digit is held fixed) ----
     # The latent factor structure is always outer (x) digit1 (x) digit2; sweep_digit only
@@ -305,7 +338,7 @@ def main():
 
     # ---- CSV ----
     n_pcs = args.n_pcs_csv
-    csv_path = f"{args.out_prefix}.csv"
+    csv_path = f"{out_prefix}.csv"
 
     def pc_row(coords, i):
         vals = coords[i].tolist()
@@ -325,7 +358,7 @@ def main():
     print(f"Wrote {csv_path}")
 
     # ---- NPZ ----
-    npz_path = f"{args.out_prefix}.npz"
+    npz_path = f"{out_prefix}.npz"
     payload = dict(
         group=group,
         decomposition=cfg['decomposition'],

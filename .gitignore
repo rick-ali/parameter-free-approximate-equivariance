@@ -182,3 +182,4 @@ heatmaps.png
 results/
 aug_acc_ent_by_lambda.csv
 make_acc_ent_csv.sh
+checkpoints/
