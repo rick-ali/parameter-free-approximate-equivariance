@@ -160,14 +160,18 @@ def tripartite_marginals(states: torch.Tensor, dim_a: int, dim_b: int, dim_c: in
 
 
 def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
-                             decimals=3, eig_spectrum=False):
+                             decimals=3, eig_spectrum=False, emb_norm=None):
     """Print the dominant learned vector of each subsystem and its alignment with all-ones.
 
     The all-ones direction is the unique G-invariant (trivial-irrep) direction of a regular
     representation: every permutation matrix fixes it, so a subsystem that collapses onto it
     satisfies its equivariance constraint for free. For each subsystem reduced density matrix
     rho (n, d, d) we take the top eigenvector as the subsystem's dominant pure direction
-    (magnitude irrelevant: it is unit norm). We report, across the sweep:
+    (its own magnitude is unit / gauge-free). We report, across the sweep:
+        embnorm: the L2 magnitude of the 64-dim embedding block this sample was built from
+                 (same across subsystems: individual factor magnitudes are NOT separable -- a
+                  product state u(x)v has a gauge u->c*u, v->(1/c)*v, so only ||u||*||v||=||psi||
+                  is defined). Pass emb_norm=None to omit the column.
         topeig : the top eigenvalue (purity; ~1 => the marginal is ~pure / product-like)
         align  : |<top_vec, 1/sqrt(d)>| in [0, 1]  (1 => collapsed to the all-ones direction)
     plus a per-subsystem summary (mean alignment, and a consensus 'drift' = how much the
@@ -185,6 +189,11 @@ def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
     print("\n=== Subsystem learned vectors (alignment with the all-ones / trivial-irrep direction) ===")
     print("align = |<top eigvec, 1/sqrt(d)>| in [0,1];  align~1 AND topeig~1 => collapsed to all-ones "
           "(trivial equivariance)")
+    if emb_norm is not None:
+        emb_norm = np.asarray(emb_norm)
+        print(f"embedding magnitude ||64-dim block||: mean {emb_norm.mean():.4f} "
+              f"(min {emb_norm.min():.4f}, max {emb_norm.max():.4f}) -- shown per-row below; "
+              f"individual factor magnitudes are not separable (tensor-product gauge).")
 
     out = {}  # name -> dict(topvec, topeig, align) for optional NPZ stashing
     for name in names:
@@ -202,9 +211,11 @@ def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
         align = np.abs(top_vec @ ones)         # (n,) in [0, 1]
 
         print(f"\n[{name}]  ({role[name]})   d={d}   ones-ref = 1/sqrt({d}) = {1.0/np.sqrt(d):.4f}")
-        print(f"  {'code':<{lbl_w}}  topeig   align   top-eigenvector (unit direction, canonical sign)")
+        emb_hdr = f"{'embnorm':>9}  " if emb_norm is not None else ""
+        print(f"  {'code':<{lbl_w}}  {emb_hdr}topeig   align   top-eigenvector (unit direction, canonical sign)")
         for i, rl in enumerate(row_labels):
-            print(f"  {rl:<{lbl_w}}  {top_eval[i]:.4f}  {align[i]:.4f}  {top_vec[i]}")
+            emb_cell = f"{emb_norm[i]:>9.4f}  " if emb_norm is not None else ""
+            print(f"  {rl:<{lbl_w}}  {emb_cell}{top_eval[i]:.4f}  {align[i]:.4f}  {top_vec[i]}")
             if eig_spectrum:
                 print(f"  {'':<{lbl_w}}  eigenvalues: {evals[i][::-1]}")
 
@@ -366,8 +377,10 @@ def main():
     pred_unit = pred % 10                  # digit-2 class
 
     # ---- states + reduced density matrices ----
-    states = Z[:, :d].float()
-    states = states / states.norm(dim=1, keepdim=True).clamp_min(1e-12)  # unit vectors
+    block = Z[:, :d].float()
+    emb_norm = block.norm(dim=1).numpy()                                  # (n,) magnitude of the
+    full_norm = Z.float().norm(dim=1).numpy()                            # 64-dim block / full latent
+    states = block / block.norm(dim=1, keepdim=True).clamp_min(1e-12)     # unit vectors
 
     if cfg['decomposition'] == 'bipartite':
         rhos, entropy = bipartite_marginals(states, dims[0], dims[1])
@@ -424,7 +437,7 @@ def main():
     if args.print_vectors:
         subsystem_vectors = report_subsystem_vectors(
             rhos, names, dims, var_codes, cfg, args.variation, role,
-            decimals=args.vec_decimals, eig_spectrum=args.eig_spectrum)
+            decimals=args.vec_decimals, eig_spectrum=args.eig_spectrum, emb_norm=emb_norm)
 
     # ---- entropy column for the CSV ----
     # bipartite: the single normalized vN entropy; tripartite: the digit-2 cut (digit2 : rest).
@@ -466,6 +479,8 @@ def main():
         images=X.cpu().numpy(),
         latents=Z.numpy(),
         states=states.numpy(),
+        emb_norm=emb_norm,                 # (n,) magnitude of the 64-dim embedding block
+        full_norm=full_norm,               # (n,) magnitude of the full latent vector
         pred_class=pred,
         pred_tens=pred_tens,
         pred_unit=pred_unit,
