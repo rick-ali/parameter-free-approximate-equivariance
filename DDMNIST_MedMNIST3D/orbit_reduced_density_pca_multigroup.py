@@ -160,7 +160,7 @@ def tripartite_marginals(states: torch.Tensor, dim_a: int, dim_b: int, dim_c: in
 
 
 def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
-                             decimals=3, eig_spectrum=False, emb_norm=None):
+                             decimals=3, eig_spectrum=False, emb_norm=None, leftover=None):
     """Print the dominant learned vector of each subsystem and its alignment with all-ones.
 
     The all-ones direction is the unique G-invariant (trivial-irrep) direction of a regular
@@ -174,9 +174,14 @@ def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
                   is defined). Pass emb_norm=None to omit the column.
         topeig : the top eigenvalue (purity; ~1 => the marginal is ~pure / product-like)
         align  : |<top_vec, 1/sqrt(d)>| in [0, 1]  (1 => collapsed to the all-ones direction)
+        leftover: the raw, un-normalized latent dims beyond the 64-dim block (e.g. 66-64=2),
+                 which the model leaves under identity in W_full. Same across subsystems; pass
+                 leftover=None (or a width-0 array) to omit the column.
     plus a per-subsystem summary (mean alignment, and a consensus 'drift' = how much the
     direction moves across the sweep).
     """
+    leftover = np.asarray(leftover) if leftover is not None else None
+    has_leftover = leftover is not None and leftover.ndim == 2 and leftover.shape[1] > 0
     np.set_printoptions(precision=decimals, suppress=True)
     dim_by_name = dict(zip(names, dims))
     # row labels: symmetry -> group-element names; digit -> the swept digit class
@@ -212,10 +217,13 @@ def report_subsystem_vectors(rhos, names, dims, var_codes, cfg, variation, role,
 
         print(f"\n[{name}]  ({role[name]})   d={d}   ones-ref = 1/sqrt({d}) = {1.0/np.sqrt(d):.4f}")
         emb_hdr = f"{'embnorm':>9}  " if emb_norm is not None else ""
-        print(f"  {'code':<{lbl_w}}  {emb_hdr}topeig   align   top-eigenvector (unit direction, canonical sign)")
+        lo_hdr = "   leftover(raw)" if has_leftover else ""
+        print(f"  {'code':<{lbl_w}}  {emb_hdr}topeig   align   "
+              f"top-eigenvector (unit direction, canonical sign){lo_hdr}")
         for i, rl in enumerate(row_labels):
             emb_cell = f"{emb_norm[i]:>9.4f}  " if emb_norm is not None else ""
-            print(f"  {rl:<{lbl_w}}  {emb_cell}{top_eval[i]:.4f}  {align[i]:.4f}  {top_vec[i]}")
+            lo_cell = f"   {leftover[i]}" if has_leftover else ""
+            print(f"  {rl:<{lbl_w}}  {emb_cell}{top_eval[i]:.4f}  {align[i]:.4f}  {top_vec[i]}{lo_cell}")
             if eig_spectrum:
                 print(f"  {'':<{lbl_w}}  eigenvalues: {evals[i][::-1]}")
 
@@ -380,6 +388,7 @@ def main():
     block = Z[:, :d].float()
     emb_norm = block.norm(dim=1).numpy()                                  # (n,) magnitude of the
     full_norm = Z.float().norm(dim=1).numpy()                            # 64-dim block / full latent
+    leftover = Z[:, d:].float().numpy()                                  # (n, total-64) raw padding
     states = block / block.norm(dim=1, keepdim=True).clamp_min(1e-12)     # unit vectors
 
     if cfg['decomposition'] == 'bipartite':
@@ -437,7 +446,8 @@ def main():
     if args.print_vectors:
         subsystem_vectors = report_subsystem_vectors(
             rhos, names, dims, var_codes, cfg, args.variation, role,
-            decimals=args.vec_decimals, eig_spectrum=args.eig_spectrum, emb_norm=emb_norm)
+            decimals=args.vec_decimals, eig_spectrum=args.eig_spectrum, emb_norm=emb_norm,
+            leftover=leftover)
 
     # ---- entropy column for the CSV ----
     # bipartite: the single normalized vN entropy; tripartite: the digit-2 cut (digit2 : rest).
@@ -481,6 +491,7 @@ def main():
         states=states.numpy(),
         emb_norm=emb_norm,                 # (n,) magnitude of the 64-dim embedding block
         full_norm=full_norm,               # (n,) magnitude of the full latent vector
+        leftover=leftover,                 # (n, total-64) raw padding dims beyond the block
         pred_class=pred,
         pred_tens=pred_tens,
         pred_unit=pred_unit,
