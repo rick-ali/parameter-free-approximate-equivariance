@@ -156,7 +156,7 @@ def get_args():
     parser.add_argument('--fix_rep', action='store_true')
     parser.add_argument('--algebra_loss_criterion', type=str, default='mse')
     parser.add_argument('--log_inputs', action='store_true', help='Log inputs to TensorBoard')
-    parser.add_argument('--equivariant_layer_id', type=int, nargs="+", default=[9], help='Layer ID of the equivariant layer in the model')
+    parser.add_argument('--equivariant_layer_id', type=int, nargs="+", default=[12], help='Layer ID of the equivariant layer in the model')
     parser.add_argument('--group', type=str, required=True, help='Group for the model. Can be C4xC4 or D4xD4')
 
     parser.add_argument('--num_epochs', type=int, default=150) 
