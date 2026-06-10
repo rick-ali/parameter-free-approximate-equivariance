@@ -403,6 +403,22 @@ def main():
         print(f"spread ratio  rho_{swept_name} / rho_outer  = "
               f"{tv[swept_name] / max(tv['outer'], 1e-300):.1f}")
 
+    # ---- average entanglement of the n encodings plotted in the PCA ----
+    # `entropy` holds the per-sample normalized von Neumann entropy in [0,1] for each cut
+    # (bipartite: the single digit1:digit2 cut; tripartite: the three isolated-subsystem cuts).
+    entropy_cut_label = {
+        'entropy': f'digit1 : digit2',
+        'entropy_a_bc': 'outer : (digit1 digit2)',
+        'entropy_b_ac': 'digit1 : (outer digit2)',
+        'entropy_c_ab': 'digit2 : (outer digit1)',
+    }
+    print(f"\naverage entanglement over the {n} plotted encodings (normalized vN entropy, [0,1]):")
+    for key, vals in entropy.items():
+        vals = np.asarray(vals)
+        label = entropy_cut_label.get(key, key)
+        print(f"    {label:<24} mean = {vals.mean():.4f}  (std {vals.std():.4f}, "
+              f"min {vals.min():.4f}, max {vals.max():.4f})")
+
     # ---- optional: dominant subsystem vectors + all-ones alignment ----
     subsystem_vectors = None
     if args.print_vectors:
@@ -455,6 +471,10 @@ def main():
         pred_unit=pred_unit,
     )
     payload.update({f'entropy_{k}' if not k.startswith('entropy') else k: v
+                    for k, v in entropy.items()})
+    # average entanglement over the n plotted encodings, per cut
+    payload.update({(f'avg_entropy_{k}' if not k.startswith('entropy')
+                     else f'avg_{k}'): float(np.asarray(v).mean())
                     for k, v in entropy.items()})
     for name in names:
         p = pca[name]
