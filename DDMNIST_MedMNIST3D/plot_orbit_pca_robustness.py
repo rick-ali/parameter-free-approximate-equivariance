@@ -108,20 +108,29 @@ def plot_digit(data, names, sweep_digit, pcs, correct, out):
 
     px, py = pcs
     R = sym_range(list(coords_by_name.values()), px, py)
+    print(f"\n[digit, sweep digit-{sweep_digit}] per-subsystem stats (pooled over all "
+          f"{len(fixed_val)} samples):")
     for ax, name in zip(axes, names):
         tvar = float(np.var(data[f'rho_{name}'].reshape(len(fixed_val), -1), axis=0).sum())
+        align = data[f'align_{name}']
         title = (f"rho_{name}  ({role_for(name, sweep_digit, 'swept over classes')})\n"
-                 f"total variance = {tvar:.3e}   mean align = {data[f'align_{name}'].mean():.3f}")
+                 f"total variance = {tvar:.3e}\n"
+                 f"align(ones) = {align.mean():.3f}+/-{align.std():.3f}   "
+                 f"dev(ones) = {1.0 - align.mean():.3f}")
         scatter_panel(ax, coords_by_name[name], (px, py), swept_class, fixed_val, correct,
                       var_by_name[name], title)
         ax.set_xlim(-R, R); ax.set_ylim(-R, R)
         ax.set_aspect('equal', adjustable='box')
+        print(f"  rho_{name:<7} ({role_for(name, sweep_digit, 'swept over classes')}): "
+              f"total var = {tvar:.3e}   mean align(ones) = {align.mean():.4f}   "
+              f"mean dev(ones) = {1.0 - align.mean():.4f}")
 
     fixed_digit = 1 if sweep_digit == 2 else 2
     sup = (f"All-pairs reduced-density PCA (pooled), sweeping digit-{sweep_digit} over its 10 "
            f"classes   [{data['group']}, {data['decomposition']}]\n"
            f"colour = fixed digit-{fixed_digit} (0-9),  text = swept class,  red ring = misclassified")
     fig.suptitle(sup, fontsize=11)
+    fig.subplots_adjust(top=0.80, wspace=0.3)
     fig.savefig(out, dpi=150, bbox_inches='tight')
     print(f"Wrote {out}")
 
@@ -152,27 +161,37 @@ def plot_symmetry(data, names, sweep_digit, pcs, correct, out):
     col_R = {name: sym_range([cell[(fv, name)][1] for fv in fixed_vals], px, py)
              for name in names}
 
+    fixed_digit = 1 if sweep_digit == 2 else 2
+    print(f"\n[symmetry, sweep digit-{sweep_digit}] per fixed digit-{fixed_digit} x subsystem "
+          f"stats (total variance | mean align(ones) | mean dev(ones)):")
     for r, fv in enumerate(fixed_vals):
+        row_bits = []
         for c, name in enumerate(names):
             ax = axes[r][c]
             sel, coords, var = cell[(fv, name)]
+            tvar = float(np.var(data[f'rho_{name}'][sel].reshape(len(sel), -1), axis=0).sum())
+            align = data[f'align_{name}'][sel]
             # orbit key = swept class (joins the n_sym transforms of one class), ordered by code
             order = np.lexsort((group_code[sel], swept_class[sel]))
+            title = (f"fix digit-{fixed_digit}={fv} | rho_{name}\n"
+                     f"var={tvar:.2e}  align={align.mean():.3f}  dev={1.0 - align.mean():.3f}")
             scatter_panel(ax, coords[order], (px, py), np.array(point_labels)[sel][order],
-                          swept_class[sel][order], correct[sel][order], var,
-                          f"fix digit-{1 if sweep_digit == 2 else 2}={fv} | rho_{name}",
+                          swept_class[sel][order], correct[sel][order], var, title,
                           orbit_keys=swept_class[sel][order])
             R = col_R[name]
             ax.set_xlim(-R, R); ax.set_ylim(-R, R)
             ax.set_aspect('equal', adjustable='box')
+            row_bits.append(f"rho_{name}: var={tvar:.3e} align={align.mean():.4f} "
+                            f"dev={1.0 - align.mean():.4f}")
+        print(f"  digit-{fixed_digit}={fv}:  " + "   ".join(row_bits))
 
-    fixed_digit = 1 if sweep_digit == 2 else 2
     sup = (f"All-pairs reduced-density PCA, sweeping digit-{sweep_digit}'s "
            f"{group.split('x')[0]} orbit, one row per fixed digit-{fixed_digit}   "
            f"[{group}, {data['decomposition']}]\n"
            f"colour = swept class (0-9),  text = group element,  lines = per-class orbit,  "
            f"red ring = misclassified")
     fig.suptitle(sup, fontsize=12)
+    fig.subplots_adjust(hspace=0.55, wspace=0.3)
     fig.savefig(out, dpi=130, bbox_inches='tight')
     print(f"Wrote {out}")
 
