@@ -200,25 +200,29 @@ def plot_summary(data, names, sweep_digit, out):
 
     entropy_keys = [k for k in data.files if k.startswith('entropy')]
 
+    def box(ax, series, ticklabels):
+        ax.boxplot(series)  # positions default to 1..len(series); set names cross-version
+        ax.set_xticks(range(1, len(ticklabels) + 1))
+        ax.set_xticklabels(ticklabels)
+
     fig, axes = plt.subplots(1, 4, figsize=(22, 5))
 
-    axes[0].boxplot(list(spread.values()), labels=list(spread.keys()))
+    box(axes[0], list(spread.values()), list(spread.keys()))
     axes[0].axhline(1.0, color='red', ls='--', lw=1)
     axes[0].set_yscale('log'); axes[0].set_ylabel('spread ratio (per fixed digit)')
     axes[0].set_title('spread ratio swept / fixed (>1 = swept varies more)')
 
-    axes[1].boxplot([tvar[name] for name in names], labels=names)
+    box(axes[1], [tvar[name] for name in names], names)
     axes[1].set_yscale('log'); axes[1].set_ylabel('total variance (per fixed digit)')
     axes[1].set_title('subsystem total variance')
 
-    axes[2].boxplot([data[f'align_{name}'] for name in names], labels=names)
+    box(axes[2], [data[f'align_{name}'] for name in names], names)
     axes[2].set_ylim(0, 1.02); axes[2].set_ylabel('|<top eigvec, all-ones>|')
     axes[2].set_title('all-ones alignment (1 = collapsed to trivial irrep)')
 
     if entropy_keys:
-        axes[3].boxplot([data[k] for k in entropy_keys],
-                        labels=[k.replace('entropy_', '').replace('entropy', 'd1:d2')
-                                for k in entropy_keys])
+        box(axes[3], [data[k] for k in entropy_keys],
+            [k.replace('entropy_', '').replace('entropy', 'd1:d2') for k in entropy_keys])
         axes[3].set_ylim(0, 1.02); axes[3].set_ylabel('normalized vN entropy')
         axes[3].set_title('entanglement per cut')
         axes[3].tick_params(axis='x', rotation=20)

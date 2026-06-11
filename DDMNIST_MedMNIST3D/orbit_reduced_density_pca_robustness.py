@@ -63,17 +63,18 @@ def subsystem_top(rho: np.ndarray, d: int):
 
 
 def pick_digit_image(base, rng, slot, cls):
-    """Return one [28,28] image of class `cls` for the given digit slot (1 or 2).
+    """Return one [1,28,28] image of class `cls` for the given digit slot (1 or 2).
 
     DDMNIST pair labels encode digit-1 in the tens place, digit-2 in the units place. We pick
-    a random pair whose chosen-slot digit matches `cls` and return that slot's image.
+    a random pair whose chosen-slot digit matches `cls` and return that slot's image. The
+    channel dim is kept (as in the single-pair script) so the clean transforms see [C,H,W].
     """
     digit_of = (base.labels // 10) if slot == 1 else (base.labels % 10)
     cand = (digit_of == cls).nonzero(as_tuple=True)[0].tolist()
     if not cand:
         raise ValueError(f"No pair with digit-{slot} == {cls}.")
     pair = base[rng.choice(cand)]
-    return (pair[0] if slot == 1 else pair[1])[0]  # [1,28,28] -> [28,28]
+    return pair[0] if slot == 1 else pair[1]  # [1,28,28]
 
 
 def build_samples(base, cfg, variation, sweep_digit, reps, rng):
@@ -96,10 +97,11 @@ def build_samples(base, cfg, variation, sweep_digit, reps, rng):
                 codes = range(n_sym) if variation == 'symmetry' else [0]
                 for code in codes:
                     sw = transform(swept_img, code) if variation == 'symmetry' else swept_img
+                    # _combine_images takes [28,28] tiles (first=digit1, second=digit2)
                     if sweep_digit == 2:
-                        x = base._combine_images(fixed_img, sw)   # first=digit1, second=digit2
+                        x = base._combine_images(fixed_img[0], sw[0])
                     else:
-                        x = base._combine_images(sw, fixed_img)
+                        x = base._combine_images(sw[0], fixed_img[0])
                     images.append(x)
                     fixed_val.append(fv)
                     swept_class.append(c)
