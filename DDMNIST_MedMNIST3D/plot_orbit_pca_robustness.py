@@ -190,8 +190,11 @@ def plot_symmetry(data, names, sweep_digit, pcs, correct, out):
            f"[{group}, {data['decomposition']}]\n"
            f"colour = swept class (0-9),  text = group element,  lines = per-class orbit,  "
            f"red ring = misclassified")
-    fig.suptitle(sup, fontsize=12)
-    fig.subplots_adjust(hspace=0.55, wspace=0.3)
+    # The figure is very tall, so set the title band in absolute inches (a fractional top
+    # margin would scale with height and open a huge gap below the suptitle).
+    fig_h = 4.6 * n_rows
+    fig.subplots_adjust(top=1.0 - 1.1 / fig_h, hspace=0.55, wspace=0.3)
+    fig.suptitle(sup, fontsize=12, y=1.0 - 0.35 / fig_h)
     fig.savefig(out, dpi=130, bbox_inches='tight')
     print(f"Wrote {out}")
 
