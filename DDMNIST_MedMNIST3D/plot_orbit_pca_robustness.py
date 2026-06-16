@@ -83,12 +83,13 @@ def scatter_panel(ax, coords, pcs, point_labels, color_idx, correct, var, title,
             ax.scatter([xs[i]], [ys[i]], s=160, facecolors='none', edgecolors='red',
                        linewidths=1.0, zorder=2)
         ax.text(xs[i], ys[i], str(point_labels[i]), color=cmap(int(color_idx[i]) % 10),
-                ha='center', va='center', fontsize=9, fontweight='bold', zorder=3)
+                ha='center', va='center', fontsize=14, fontweight='bold', zorder=3)
     vx = var[px] * 100 if px < len(var) else 0.0
     vy = var[py] * 100 if py < len(var) else 0.0
-    ax.set_xlabel(f"PC{px + 1} ({vx:.1f}%)")
-    ax.set_ylabel(f"PC{py + 1} ({vy:.1f}%)")
-    ax.set_title(title, fontsize=10)
+    ax.set_xlabel(f"PC{px + 1} ({vx:.1f}%)", fontsize=14)
+    ax.set_ylabel(f"PC{py + 1} ({vy:.1f}%)", fontsize=14)
+    ax.tick_params(axis='both', labelsize=12)
+    ax.set_title(title, fontsize=16)
 
 
 def plot_digit(data, names, sweep_digit, pcs, correct, out):
@@ -145,8 +146,9 @@ def plot_symmetry(data, names, sweep_digit, pcs, correct, out):
     point_labels = [sym_labels[c] for c in group_code]
 
     fixed_vals = sorted(np.unique(fixed_val).tolist())
+    fixed_vals = fixed_vals[:1]  # TODO: only plotting the first row for now; remove to plot all
     n_rows, n_cols = len(fixed_vals), len(names)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5.2 * n_cols, 4.6 * n_rows),
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6.2 * n_cols, 6.2 * n_rows),
                              squeeze=False)
     px, py = pcs
 
@@ -158,8 +160,8 @@ def plot_symmetry(data, names, sweep_digit, pcs, correct, out):
             rho = data[f'rho_{name}'][sel]
             coords, var, _ = pca_across_samples(rho.reshape(rho.shape[0], -1))
             cell[(fv, name)] = (sel, coords, var)
-    col_R = {name: sym_range([cell[(fv, name)][1] for fv in fixed_vals], px, py)
-             for name in names}
+    # Single shared scale across every panel so subsystem variance is directly comparable.
+    global_R = sym_range([cell[(fv, name)][1] for fv in fixed_vals for name in names], px, py)
 
     fixed_digit = 1 if sweep_digit == 2 else 2
     print(f"\n[symmetry, sweep digit-{sweep_digit}] per fixed digit-{fixed_digit} x subsystem "
@@ -171,30 +173,24 @@ def plot_symmetry(data, names, sweep_digit, pcs, correct, out):
             sel, coords, var = cell[(fv, name)]
             tvar = float(np.var(data[f'rho_{name}'][sel].reshape(len(sel), -1), axis=0).sum())
             align = data[f'align_{name}'][sel]
-            # orbit key = swept class (joins the n_sym transforms of one class), ordered by code
             order = np.lexsort((group_code[sel], swept_class[sel]))
-            title = (f"fix digit-{fixed_digit}={fv} | rho_{name}\n"
-                     f"var={tvar:.2e}  align={align.mean():.3f}  dev={1.0 - align.mean():.3f}")
+            sigma = rf"$\sigma_{chr(ord('A') + c)}$"  # per-column subsystem label A, B, C, ...
+            title = f"{sigma} | total variance = {tvar:.2e}"
             scatter_panel(ax, coords[order], (px, py), np.array(point_labels)[sel][order],
-                          swept_class[sel][order], correct[sel][order], var, title,
-                          orbit_keys=swept_class[sel][order])
-            R = col_R[name]
-            ax.set_xlim(-R, R); ax.set_ylim(-R, R)
+                          swept_class[sel][order], correct[sel][order], var, title)
+            ax.set_xlim(-global_R, global_R); ax.set_ylim(-global_R, global_R)
             ax.set_aspect('equal', adjustable='box')
             row_bits.append(f"rho_{name}: var={tvar:.3e} align={align.mean():.4f} "
                             f"dev={1.0 - align.mean():.4f}")
         print(f"  digit-{fixed_digit}={fv}:  " + "   ".join(row_bits))
 
-    sup = (f"All-pairs reduced-density PCA, sweeping digit-{sweep_digit}'s "
-           f"{group.split('x')[0]} orbit, one row per fixed digit-{fixed_digit}   "
-           f"[{group}, {data['decomposition']}]\n"
-           f"colour = swept class (0-9),  text = group element,  lines = per-class orbit,  "
-           f"red ring = misclassified")
-    # The figure is very tall, so set the title band in absolute inches (a fractional top
-    # margin would scale with height and open a huge gap below the suptitle).
-    fig_h = 4.6 * n_rows
-    fig.subplots_adjust(top=1.0 - 1.1 / fig_h, hspace=0.55, wspace=0.3)
-    fig.suptitle(sup, fontsize=12, y=1.0 - 0.35 / fig_h)
+    # sup = (f"All-pairs reduced-density PCA, sweeping digit-{sweep_digit}'s "
+    #        f"{group.split('x')[0]} orbit, one row per fixed digit-{fixed_digit}   "
+    #        f"[{group}, {data['decomposition']}]\n"
+    #        f"colour = swept class (0-9),  text = group element,  lines = per-class orbit,  "
+    #        f"red ring = misclassified")
+    # fig.suptitle(sup, fontsize=12, y=1.0 - 0.35 / fig_h)
+    fig.subplots_adjust(hspace=0.18, wspace=0.28)
     fig.savefig(out, dpi=130, bbox_inches='tight')
     print(f"Wrote {out}")
 
